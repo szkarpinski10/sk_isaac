@@ -4,10 +4,13 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 __all__ = [
-    "joint_pos_target_l2",
+    "ee_frame_pos",
+    "ee_frame_quat",
+    "gripper_pos",
 ]
 
 # Forward stable MDP terms lazily, then override with environment-specific terms below.
 from isaaclab.envs.mdp import *  # noqa: F401, F403
 
-from .rewards import joint_pos_target_l2
+
+from .observations import ee_frame_pos, ee_frame_quat, gripper_pos

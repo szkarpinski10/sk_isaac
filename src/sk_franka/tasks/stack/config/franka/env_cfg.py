@@ -231,6 +231,15 @@ class ObservationsCfg:
         joint_pos_rel = ObsTerm(func=mdp.joint_pos_rel)
         joint_vel_rel = ObsTerm(func=mdp.joint_vel_rel)
 
+        # actions 
+        actions = ObsTerm(func=mdp.last_action)
+
+        # ee 
+        eef_pos = ObsTerm(func=mdp.ee_frame_pos)
+        eef_quat = ObsTerm(func=mdp.ee_frame_quat)
+        gripper_pos = ObsTerm(func=mdp.gripper_pos)
+
+
         def __post_init__(self) -> None:
             self.enable_corruption = False
             self.concatenate_terms = True
@@ -252,6 +261,15 @@ class RewardsCfg:
 
     pass
 
+
+@configclass
+class CommandsCfg:
+    """Command terms for the MDP."""
+    pass
+
+@configclass
+class CurriculumCfg:
+    pass
 
 @configclass
 class TerminationsCfg:
