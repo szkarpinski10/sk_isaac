@@ -89,11 +89,11 @@ class StackSceneCfg(InteractiveSceneCfg):
         spawn=sim_utils.DomeLightCfg(color=(0.75, 0.75, 0.75), intensity=3000.0),
     )
 
-    # cube
-    object = RigidObjectCfg(
+    # cube 1
+    cube_1 = RigidObjectCfg(
         prim_path = "{ENV_REGEX_NS}/Cube_1",
         init_state = RigidObjectCfg.InitialStateCfg(
-            pos = [0.50,0.0,0.025],
+            pos = [0.50,0.15,0.025],
         ),
         spawn=sim_utils.CuboidCfg(
             size=(0.05, 0.05, 0.05),
@@ -109,6 +109,62 @@ class StackSceneCfg(InteractiveSceneCfg):
             collision_props=sim_utils.CollisionPropertiesCfg(),
             visual_material=sim_utils.PreviewSurfaceCfg(
                 diffuse_color=(0.0, 0.0, 1.0),
+            ),
+            physics_material=sim_utils.RigidBodyMaterialCfg(
+                static_friction=0.5,
+                dynamic_friction=0.45,
+            ),
+        ),
+    )
+
+    # cube 2
+    cube_2 = RigidObjectCfg(
+        prim_path = "{ENV_REGEX_NS}/Cube_2",
+        init_state = RigidObjectCfg.InitialStateCfg(
+            pos = [0.55,0.20,0.025],
+        ),
+        spawn=sim_utils.CuboidCfg(
+            size=(0.05, 0.05, 0.05),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.08),
+                rigid_props=PhysxRigidBodyCfg(      
+                    solver_position_iteration_count=16,
+                    solver_velocity_iteration_count=1,
+                    max_angular_velocity=1000.0,
+                    max_linear_velocity=1000.0,
+                    max_depenetration_velocity=5.0,
+                    disable_gravity=False,
+                ),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(
+                diffuse_color=(1.0, 0.0, 0.0),
+            ),
+            physics_material=sim_utils.RigidBodyMaterialCfg(
+                static_friction=0.5,
+                dynamic_friction=0.45,
+            ),
+        ),
+    )
+
+    # cube 3
+    cube_3 = RigidObjectCfg(
+        prim_path = "{ENV_REGEX_NS}/Cube_3",
+        init_state = RigidObjectCfg.InitialStateCfg(
+            pos = [0.60,0.30,0.025],
+        ),
+        spawn=sim_utils.CuboidCfg(
+            size=(0.05, 0.05, 0.05),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.08),
+                rigid_props=PhysxRigidBodyCfg(      
+                    solver_position_iteration_count=16,
+                    solver_velocity_iteration_count=1,
+                    max_angular_velocity=1000.0,
+                    max_linear_velocity=1000.0,
+                    max_depenetration_velocity=5.0,
+                    disable_gravity=False,
+                ),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(
+                diffuse_color=(0.0, 1.0, 0.0),
             ),
             physics_material=sim_utils.RigidBodyMaterialCfg(
                 static_friction=0.5,
@@ -186,8 +242,10 @@ class ObservationsCfg:
         eef_quat = ObsTerm(func=mdp.ee_frame_quat)
         gripper_pos = ObsTerm(func=mdp.gripper_pos)
 
-        object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
-        target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
+
+        # cubes
+        object = ObsTerm(func=mdp.object_obs)
+        
 
 
         def __post_init__(self) -> None:
@@ -204,13 +262,23 @@ class EventCfg:
 
     reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
 
-    reset_object_position = EventTerm(
-        func=mdp.reset_root_state_uniform,
+    # randomize_franka_joint_state = EventTerm(
+    #     func=mdp.reset_joints_by_offset,
+    #     mode="reset",
+    #     params={
+    #         "position_range": (-0.1, 0.1),
+    #         "velocity_range": (0.0, 0.0),
+    #         "asset_cfg": SceneEntityCfg("robot"),
+    #     },
+    # )
+
+    randomize_cube_positions = EventTerm(
+        func=mdp.randomize_object_pose,
         mode="reset",
         params={
-            "pose_range": {"x": (-0.1, 0.1), "y": (-0.25, 0.25), "z": (0.0, 0.0)},
-            "velocity_range": {},
-            "asset_cfg": SceneEntityCfg("object"),
+            "pose_range": {"x": (0.4, 0.6), "y": (-0.10, 0.10), "z": (0.025, 0.025), "yaw": (-1.0, 1.0)},
+            "min_separation": 0.1,
+            "asset_cfgs": [SceneEntityCfg("cube_1"), SceneEntityCfg("cube_2"), SceneEntityCfg("cube_3")],
         },
     )
 
@@ -219,21 +287,21 @@ class EventCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
-    reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.1}, weight=1.0)
+    reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.1, "object_cfg": SceneEntityCfg("cube_2")}, weight=1.0)
 
-    lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.04}, weight=15.0)
+    # lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.04}, weight=15.0)
 
-    object_goal_tracking = RewTerm(
-        func=mdp.object_goal_distance,
-        params={"std": 0.3, "minimal_height": 0.04, "command_name": "object_pose", "success_threshold": 0.05},
-        weight=16.0,
-    )
+    # object_goal_tracking = RewTerm(
+    #     func=mdp.object_goal_distance,
+    #     params={"std": 0.3, "minimal_height": 0.04, "command_name": "object_pose", "success_threshold": 0.05},
+    #     weight=16.0,
+    # )
 
-    object_goal_tracking_fine_grained = RewTerm(
-        func=mdp.object_goal_distance,
-        params={"std": 0.05, "minimal_height": 0.04, "command_name": "object_pose"},
-        weight=5.0,
-    )
+    # object_goal_tracking_fine_grained = RewTerm(
+    #     func=mdp.object_goal_distance,
+    #     params={"std": 0.05, "minimal_height": 0.04, "command_name": "object_pose"},
+    #     weight=5.0,
+    # )
 
     # action penalty
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
@@ -275,9 +343,21 @@ class TerminationsCfg:
     # (1) Time out
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
 
-    object_dropping = DoneTerm(
-        func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("object")}
+    
+
+    cube_1_dropping = DoneTerm(
+        func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cube_1")}
     )
+
+    cube_2_dropping = DoneTerm(
+        func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cube_2")}
+    )
+
+    cube_3_dropping = DoneTerm(
+        func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cube_3")}
+    )
+
+    success = DoneTerm(func=mdp.cubes_stacked)
     
 
 ##
@@ -311,7 +391,7 @@ class StackEnvCfg(ManagerBasedRLEnvCfg):
 
         # general settings
         self.decimation = 2
-        self.episode_length_s = 5
+        self.episode_length_s = 10
         
         # visualizer camera settings
         self.sim.default_visualizer_cfg = VisualizerCfg(eye=(8.0, 0.0, 5.0))
