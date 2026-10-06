@@ -90,10 +90,10 @@ class StackSceneCfg(InteractiveSceneCfg):
     )
 
     # cube
-    cube_1 = RigidObjectCfg(
+    object = RigidObjectCfg(
         prim_path = "{ENV_REGEX_NS}/Cube_1",
         init_state = RigidObjectCfg.InitialStateCfg(
-            pos = [0.20,0.15,0.025],
+            pos = [0.50,0.0,0.025],
         ),
         spawn=sim_utils.CuboidCfg(
             size=(0.05, 0.05, 0.05),
@@ -117,59 +117,6 @@ class StackSceneCfg(InteractiveSceneCfg):
         ),
     )
 
-    cube_2 = RigidObjectCfg(
-        prim_path = "{ENV_REGEX_NS}/Cube_2",
-        init_state = RigidObjectCfg.InitialStateCfg(
-            pos = [0.40,0.10,0.025],
-        ),
-        spawn=sim_utils.CuboidCfg(
-            size=(0.05, 0.05, 0.05),
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.08),
-                rigid_props=PhysxRigidBodyCfg(      
-                    solver_position_iteration_count=16,
-                    solver_velocity_iteration_count=1,
-                    max_angular_velocity=1000.0,
-                    max_linear_velocity=1000.0,
-                    max_depenetration_velocity=5.0,
-                    disable_gravity=False,
-                ),
-            collision_props=sim_utils.CollisionPropertiesCfg(),
-            visual_material=sim_utils.PreviewSurfaceCfg(
-                diffuse_color=(1.0, 0.0, 0.0),
-            ),
-            physics_material=sim_utils.RigidBodyMaterialCfg(
-                static_friction=0.5,
-                dynamic_friction=0.45,
-            ),
-        ),
-    )
-
-    cube_3 = RigidObjectCfg(
-        prim_path = "{ENV_REGEX_NS}/Cube_3",
-        init_state = RigidObjectCfg.InitialStateCfg(
-            pos = [0.40,0.18,0.025],
-        ),
-        spawn=sim_utils.CuboidCfg(
-            size=(0.05, 0.05, 0.05),
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.08),
-                rigid_props=PhysxRigidBodyCfg(      
-                    solver_position_iteration_count=16,
-                    solver_velocity_iteration_count=1,
-                    max_angular_velocity=1000.0,
-                    max_linear_velocity=1000.0,
-                    max_depenetration_velocity=5.0,
-                    disable_gravity=False,
-                ),
-            collision_props=sim_utils.CollisionPropertiesCfg(),
-            visual_material=sim_utils.PreviewSurfaceCfg(
-                diffuse_color=(0.0, 1.0, 0.0),
-            ),
-            physics_material=sim_utils.RigidBodyMaterialCfg(
-                static_friction=0.5,
-                dynamic_friction=0.45,
-            ),
-        ),
-    )
 
     # end effector marker
     marker_cfg = FRAME_MARKER_CFG.copy()
@@ -239,6 +186,9 @@ class ObservationsCfg:
         eef_quat = ObsTerm(func=mdp.ee_frame_quat)
         gripper_pos = ObsTerm(func=mdp.gripper_pos)
 
+        object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
+        target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
+
 
         def __post_init__(self) -> None:
             self.enable_corruption = False
@@ -254,22 +204,69 @@ class EventCfg:
 
     reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
 
+    reset_object_position = EventTerm(
+        func=mdp.reset_root_state_uniform,
+        mode="reset",
+        params={
+            "pose_range": {"x": (-0.1, 0.1), "y": (-0.25, 0.25), "z": (0.0, 0.0)},
+            "velocity_range": {},
+            "asset_cfg": SceneEntityCfg("object"),
+        },
+    )
+
 
 @configclass
 class RewardsCfg:
     """Reward terms for the MDP."""
 
-    pass
+    reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.1}, weight=1.0)
+
+    lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.04}, weight=15.0)
+
+    object_goal_tracking = RewTerm(
+        func=mdp.object_goal_distance,
+        params={"std": 0.3, "minimal_height": 0.04, "command_name": "object_pose", "success_threshold": 0.05},
+        weight=16.0,
+    )
+
+    object_goal_tracking_fine_grained = RewTerm(
+        func=mdp.object_goal_distance,
+        params={"std": 0.05, "minimal_height": 0.04, "command_name": "object_pose"},
+        weight=5.0,
+    )
+
+    # action penalty
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
+
+    joint_vel = RewTerm(
+        func=mdp.joint_vel_l2,
+        weight=-1e-4,
+        params={"asset_cfg": SceneEntityCfg("robot")},
+    )
 
 
 @configclass
 class CommandsCfg:
     """Command terms for the MDP."""
-    pass
+    object_pose = mdp.UniformPoseCommandCfg(
+        asset_name="robot",
+        body_name="panda_hand",  
+        resampling_time_range=(5.0, 5.0),
+        debug_vis=True,
+        ranges=mdp.UniformPoseCommandCfg.Ranges(
+            pos_x=(0.4, 0.6), pos_y=(-0.25, 0.25), pos_z=(0.25, 0.5), roll=(0.0, 0.0), pitch=(0.0, 0.0), yaw=(0.0, 0.0)
+        ),
+    )
 
 @configclass
 class CurriculumCfg:
-    pass
+    action_rate = CurrTerm(
+        func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -1e-1, "num_steps": 10000}
+    )
+
+    joint_vel = CurrTerm(
+        func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -1e-1, "num_steps": 10000}
+    )
 
 @configclass
 class TerminationsCfg:
@@ -277,6 +274,10 @@ class TerminationsCfg:
 
     # (1) Time out
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
+
+    object_dropping = DoneTerm(
+        func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("object")}
+    )
     
 
 ##
@@ -289,11 +290,13 @@ class StackEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the generated cart-pole environment."""
 
     # Scene settings
-    scene: StackSceneCfg = StackSceneCfg(num_envs=4096, env_spacing=4.0)
+    scene: StackSceneCfg = StackSceneCfg(num_envs=4096, env_spacing=2.5)
     # Basic settings
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     events: EventCfg = EventCfg()
+    commands: CommandsCfg = CommandsCfg()
+    curriculum: CurriculumCfg = CurriculumCfg()
     # MDP settings
     rewards: RewardsCfg = RewardsCfg()
     terminations: TerminationsCfg = TerminationsCfg()
@@ -308,7 +311,7 @@ class StackEnvCfg(ManagerBasedRLEnvCfg):
 
         # general settings
         self.decimation = 2
-        self.episode_length_s = 10
+        self.episode_length_s = 5
         
         # visualizer camera settings
         self.sim.default_visualizer_cfg = VisualizerCfg(eye=(8.0, 0.0, 5.0))
