@@ -13,7 +13,7 @@ from . import agents
 
 
 gym.register(
-    id="SkFranka-Stack-Franka",
+    id="sk_Franka",
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
     disable_env_checker=True,
     kwargs={
