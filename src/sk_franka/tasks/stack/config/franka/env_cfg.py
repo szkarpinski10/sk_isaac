@@ -89,87 +89,7 @@ class StackSceneCfg(InteractiveSceneCfg):
         spawn=sim_utils.DomeLightCfg(color=(0.75, 0.75, 0.75), intensity=3000.0),
     )
 
-    # cube
-    cube_1 = RigidObjectCfg(
-        prim_path = "{ENV_REGEX_NS}/Cube_1",
-        init_state = RigidObjectCfg.InitialStateCfg(
-            pos = [0.20,0.15,0.025],
-        ),
-        spawn=sim_utils.CuboidCfg(
-            size=(0.05, 0.05, 0.05),
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.08),
-                rigid_props=PhysxRigidBodyCfg(      
-                    solver_position_iteration_count=16,
-                    solver_velocity_iteration_count=1,
-                    max_angular_velocity=1000.0,
-                    max_linear_velocity=1000.0,
-                    max_depenetration_velocity=5.0,
-                    disable_gravity=False,
-                ),
-            collision_props=sim_utils.CollisionPropertiesCfg(),
-            visual_material=sim_utils.PreviewSurfaceCfg(
-                diffuse_color=(0.0, 0.0, 1.0),
-            ),
-            physics_material=sim_utils.RigidBodyMaterialCfg(
-                static_friction=0.5,
-                dynamic_friction=0.45,
-            ),
-        ),
-    )
 
-    cube_2 = RigidObjectCfg(
-        prim_path = "{ENV_REGEX_NS}/Cube_2",
-        init_state = RigidObjectCfg.InitialStateCfg(
-            pos = [0.40,0.10,0.025],
-        ),
-        spawn=sim_utils.CuboidCfg(
-            size=(0.05, 0.05, 0.05),
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.08),
-                rigid_props=PhysxRigidBodyCfg(      
-                    solver_position_iteration_count=16,
-                    solver_velocity_iteration_count=1,
-                    max_angular_velocity=1000.0,
-                    max_linear_velocity=1000.0,
-                    max_depenetration_velocity=5.0,
-                    disable_gravity=False,
-                ),
-            collision_props=sim_utils.CollisionPropertiesCfg(),
-            visual_material=sim_utils.PreviewSurfaceCfg(
-                diffuse_color=(1.0, 0.0, 0.0),
-            ),
-            physics_material=sim_utils.RigidBodyMaterialCfg(
-                static_friction=0.5,
-                dynamic_friction=0.45,
-            ),
-        ),
-    )
-
-    cube_3 = RigidObjectCfg(
-        prim_path = "{ENV_REGEX_NS}/Cube_3",
-        init_state = RigidObjectCfg.InitialStateCfg(
-            pos = [0.40,0.18,0.025],
-        ),
-        spawn=sim_utils.CuboidCfg(
-            size=(0.05, 0.05, 0.05),
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.08),
-                rigid_props=PhysxRigidBodyCfg(      
-                    solver_position_iteration_count=16,
-                    solver_velocity_iteration_count=1,
-                    max_angular_velocity=1000.0,
-                    max_linear_velocity=1000.0,
-                    max_depenetration_velocity=5.0,
-                    disable_gravity=False,
-                ),
-            collision_props=sim_utils.CollisionPropertiesCfg(),
-            visual_material=sim_utils.PreviewSurfaceCfg(
-                diffuse_color=(0.0, 1.0, 0.0),
-            ),
-            physics_material=sim_utils.RigidBodyMaterialCfg(
-                static_friction=0.5,
-                dynamic_friction=0.45,
-            ),
-        ),
-    )
 
     # end effector marker
     marker_cfg = FRAME_MARKER_CFG.copy()
@@ -239,6 +159,9 @@ class ObservationsCfg:
         eef_quat = ObsTerm(func=mdp.ee_frame_quat)
         gripper_pos = ObsTerm(func=mdp.gripper_pos)
 
+        #pose command
+        pose_command = ObsTerm(func=mdp.generated_commands, params={"command_name": "ee_pose"})
+
 
         def __post_init__(self) -> None:
             self.enable_corruption = False
@@ -253,23 +176,72 @@ class EventCfg:
     """Configuration for events."""
 
     reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
+    reset_robot_joints = EventTerm(
+        func=mdp.reset_joints_by_scale,
+        mode="reset",
+        params={
+            "position_range": (0.5, 1.5),
+            "velocity_range": (0.0, 0.0),
+        },
+    )
 
 
 @configclass
 class RewardsCfg:
     """Reward terms for the MDP."""
 
-    pass
+    # task terms
+    end_effector_position_tracking = RewTerm(
+        func=mdp.position_command_error,
+        weight=-0.2,
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=["panda_hand"]), "command_name": "ee_pose"},
+    )
+    end_effector_orientation_tracking = RewTerm(
+        func=mdp.orientation_command_error,
+        weight=-0.1,
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=["panda_hand"]), "command_name": "ee_pose"},
+    )
+    success = RewTerm(func=mdp.is_terminated_term, weight=10.0, params={"term_keys": ["success"]})
+
+    # control and physical motion penalties
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
+    action_magnitude = RewTerm(func=mdp.action_l2, weight=-0.005)
+    joint_vel = RewTerm(
+        func=mdp.joint_vel_l2,
+        weight=-0.0001,
+        params={"asset_cfg": SceneEntityCfg("robot")},
+    )
 
 
 @configclass
 class CommandsCfg:
     """Command terms for the MDP."""
-    pass
+    ee_pose = mdp.UniformPoseCommandCfg(
+        asset_name="robot",
+        body_name="panda_hand",
+        resampling_time_range=(4.0, 4.0),
+        debug_vis=True,
+        position_success_threshold=0.05,
+        orientation_success_threshold=0.2,
+        ranges=mdp.UniformPoseCommandCfg.Ranges(
+            pos_x=(0.35, 0.65),
+            pos_y=(-0.2, 0.2),
+            pos_z=(0.15, 0.5),
+            roll=(0.0, 0.0),
+            pitch=(math.pi,math.pi),  
+            yaw=(-3.14, 3.14),
+        ),
+    )
 
 @configclass
 class CurriculumCfg:
-    pass
+    action_rate = CurrTerm(
+        func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -0.005, "num_steps": 4500}
+    )
+
+    joint_vel = CurrTerm(
+        func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -0.001, "num_steps": 4500}
+    )
 
 @configclass
 class TerminationsCfg:
@@ -277,6 +249,11 @@ class TerminationsCfg:
 
     # (1) Time out
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
+
+    success = DoneTerm(
+        func=mdp.pose_command_success,
+        params={"command_name": "ee_pose"},
+    )
     
 
 ##
@@ -294,6 +271,8 @@ class StackEnvCfg(ManagerBasedRLEnvCfg):
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     events: EventCfg = EventCfg()
+    commands: CommandsCfg = CommandsCfg()
+    curriculum: CurriculumCfg = CurriculumCfg()
     # MDP settings
     rewards: RewardsCfg = RewardsCfg()
     terminations: TerminationsCfg = TerminationsCfg()
@@ -307,15 +286,12 @@ class StackEnvCfg(ManagerBasedRLEnvCfg):
         self.gripper_threshold = 0.005
 
         # general settings
-        self.decimation = 2
-        self.episode_length_s = 10
-        
-        # visualizer camera settings
-        self.sim.default_visualizer_cfg = VisualizerCfg(eye=(8.0, 0.0, 5.0))
-        
-        # simulation settings
-        self.sim.dt = 0.01
+        self.decimation = 4
         self.sim.render_interval = self.decimation
+        self.episode_length_s = 12.0
+        self.sim.default_visualizer_cfg = VisualizerCfg(eye=(3.5, 3.5, 3.5))
+        # simulation settings
+        self.sim.dt = 1.0 / 120.0
         self.sim.physics = PhysxCfg(
             bounce_threshold_velocity=0.01,
             gpu_found_lost_aggregate_pairs_capacity=1024 * 1024 * 4,
