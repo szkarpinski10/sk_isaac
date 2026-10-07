@@ -116,7 +116,7 @@ class object_goal_distance_above_target(ManagerTermBase):
             env:ManagerBasedRLEnv,
             std:float,
             minimal_height:float,
-            height_above_target: float = 0.15,
+            place_offset: float = 0.05,
             object_cfg:SceneEntityCfg = SceneEntityCfg("cube_2"),
             target_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
             success_threshold: float | None = None,
@@ -127,7 +127,7 @@ class object_goal_distance_above_target(ManagerTermBase):
 
         object_pos_w = obj.data.root_pos_w.torch
         target_pos_w = target.data.root_pos_w.torch.clone()
-        target_pos_w[:,2] += height_above_target
+        target_pos_w[:,2] += place_offset
 
         distance = torch.linalg.norm(object_pos_w - target_pos_w,dim = 1)
 
