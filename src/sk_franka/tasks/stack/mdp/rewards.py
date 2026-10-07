@@ -92,3 +92,51 @@ class object_goal_distance(ManagerTermBase):
         if success_threshold is not None:
             self._succeeded |= is_lifted & (distance < success_threshold)
         return is_lifted.float() * (1 - torch.tanh(distance / std))
+
+
+
+#funkcja naprowadzająca cube_2 nad cube_1 
+class object_goal_distance_above_target(ManagerTermBase):
+    
+
+    def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        self._track_success = cfg.params.get("success_threshold") is not None
+        if self._track_success:
+            self._succeeded = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+
+    def reset(self, env_ids: torch.Tensor):
+        if self._track_success:
+            self._env.extras.setdefault("log", {})["Metrics/success_rate"] = (
+                self._succeeded[env_ids].float().mean().item()
+            )
+            self._succeeded[env_ids] = False
+    def __call__(
+            self,
+            env:ManagerBasedRLEnv,
+            std:float,
+            minimal_height:float,
+            height_above_target: float = 0.15,
+            object_cfg:SceneEntityCfg = SceneEntityCfg("cube_2"),
+            target_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
+            success_threshold: float | None = None,
+    )-> torch.Tensor:
+
+        obj : RigidObject = env.scene[object_cfg.name]
+        target : RigidObject = env.scene[target_cfg.name]
+
+        object_pos_w = obj.data.root_pos_w.torch
+        target_pos_w = target.data.root_pos_w.torch.clone()
+        target_pos_w[:,2] += height_above_target
+
+        distance = torch.linalg.norm(object_pos_w - target_pos_w,dim = 1)
+
+        is_lifted = object_pos_w[:, 2] > minimal_height
+        if success_threshold is not None:
+            self._succeeded |= is_lifted & (distance < success_threshold)
+        return is_lifted.float() * (1 - torch.tanh(distance / std))
+
+
+
+
+        
