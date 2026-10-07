@@ -288,9 +288,13 @@ class RewardsCfg:
     """Reward terms for the MDP."""
 
     reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.1, "object_cfg": SceneEntityCfg("cube_2")}, weight=1.0)
+    reaching_cube_3 = RewTerm(func=mdp.object_ee_distance_cube_3,params={"std": 0.1},  weight = 5.0)
 
     lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.04, "object_cfg":SceneEntityCfg("cube_2")}, weight=3.0)
+    #lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.04, "object_cfg":SceneEntityCfg("cube_3")}, weight=3.0)
 
+
+    # naprowadzanie cube 2
     object_goal_tracking = RewTerm(
         func=mdp.object_goal_distance_above_target,
         params={"std": 0.3, "minimal_height": 0.04, "success_threshold": 0.05},
@@ -303,13 +307,25 @@ class RewardsCfg:
         weight=2.0,
     )
 
+    # naprowadzanie cube 3
+    # object_goal_tracking_cube_3 = RewTerm(
+    #     func=mdp.object_goal_distance_above_target,
+    #     params={"std": 0.3, "minimal_height": 0.04,"object_cfg":SceneEntityCfg("cube_3"),"target_cfg":SceneEntityCfg("cube_2"), "success_threshold": 0.05},
+    #     weight=4.0,
+    # )
+
+    # object_goal_tracking_fine_grained_cube_3 = RewTerm(
+    #     func=mdp.object_goal_distance_above_target,
+    #     params={"std": 0.05,"object_cfg":SceneEntityCfg("cube_3"),"target_cfg":SceneEntityCfg("cube_2"), "minimal_height": 0.04},
+    #     weight=2.0,
+    # )
 
     cube_2_on_cube1 = RewTerm(
         func=mdp.cube_2_on_cube_1, 
         weight = 30.0,
     )
 
-    release = RewTerm(func=mdp.release_when_aligned, params={}, weight=30.0)
+    release = RewTerm(func=mdp.release_cube, params={}, weight=30.0)
 
 
     # action penalty

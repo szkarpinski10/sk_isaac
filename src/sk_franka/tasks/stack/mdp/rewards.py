@@ -167,28 +167,111 @@ def cube_2_on_cube_1(
     return stacked.float() * cube_2_still
 
 
-def release_when_aligned(
+def release_cube(
     env: ManagerBasedRLEnv,
     xy_threshold: float = 0.02,
     height_diff: float = 0.05,
     height_tolerance: float = 0.01,
     grip_width: float = 0.025,
-    upper_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
-    lower_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
+    cube_1_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
+    cube_2_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ) -> torch.Tensor:
     robot: Articulation = env.scene[robot_cfg.name]
-    upper: RigidObject = env.scene[upper_cfg.name]
-    lower: RigidObject = env.scene[lower_cfg.name]
+    cube_1: RigidObject = env.scene[cube_1_cfg.name]
+    cube_2: RigidObject = env.scene[cube_2_cfg.name]
 
-    pos_diff = upper.data.root_pos_w.torch - lower.data.root_pos_w.torch
-    xy_dist = torch.linalg.norm(pos_diff[:, :2], dim=1)
-    height_error = torch.abs(pos_diff[:, 2] - height_diff)
-    aligned = (xy_dist < xy_threshold) & (height_error < height_tolerance)
+    cube_1_pos = cube_1.data.root_pos_w.torch
+    cube_2_pos = cube_2.data.root_pos_w.torch
+    cubes_diff = cube_2_pos - cube_1_pos
+
+    xy_dist = torch.linalg.norm(cubes_diff[:, [0, 1]], dim=1)
+    height_error = torch.abs(cubes_diff[:, 2] - height_diff)
+    cubes_aligned = (xy_dist < xy_threshold) & (height_error < height_tolerance)
 
     finger_ids, _ = robot.find_joints(env.cfg.gripper_joint_names)
     finger_pos = robot.data.joint_pos.torch[:, finger_ids].mean(dim=1)
     open_amount = torch.clamp(
         (finger_pos - grip_width) / (env.cfg.gripper_open_val - grip_width), 0.0, 1.0
     )
-    return aligned.float() * open_amount
+    return cubes_aligned.float() * open_amount
+
+
+def object_ee_distance_cube_3(
+    env: ManagerBasedRLEnv,
+    std: float,
+    cube_1_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
+    cube_2_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
+    cube_3_cfg: SceneEntityCfg = SceneEntityCfg("cube_3"),
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+    xy_threshold: float = 0.03,
+    height_tolerance: float = 0.015,
+    cube_size: float = 0.05,
+    grip_width: float = 0.025,
+) -> torch.Tensor:
+    cube_1: RigidObject = env.scene[cube_1_cfg.name]
+    cube_2: RigidObject = env.scene[cube_2_cfg.name]
+    cube_3: RigidObject = env.scene[cube_3_cfg.name]
+    robot = env.scene[robot_cfg.name]
+    ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
+
+    cube_1_pos = cube_1.data.root_pos_w.torch
+    cube_2_pos = cube_2.data.root_pos_w.torch
+    cube_3_pos = cube_3.data.root_pos_w.torch
+
+    cubes_diff = cube_2_pos - cube_1_pos
+    xy_dist = torch.linalg.norm(cubes_diff[:, [0, 1]], dim=1)
+    height_error = torch.abs(cubes_diff[:, 2] - cube_size)
+    stacked = (xy_dist < xy_threshold) & (height_error < height_tolerance)
+
+    finger_ids, _ = robot.find_joints(env.cfg.gripper_joint_names)
+    finger_pos = robot.data.joint_pos.torch[:, finger_ids].mean(dim=1)
+    gripper_open = finger_pos > (grip_width + 0.01)
+
+    ee_w = ee_frame.data.target_pos_w.torch[..., 0, :]
+    distance = torch.linalg.norm(cube_3_pos - ee_w, dim=1)
+
+    return stacked.float() * (1 - torch.tanh(distance / std))
+
+
+
+class object_goal_distance_above_target_cube_3(ManagerTermBase):
+    
+
+    def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        self._track_success = cfg.params.get("success_threshold") is not None
+        if self._track_success:
+            self._succeeded = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+
+    def reset(self, env_ids: torch.Tensor):
+        if self._track_success:
+            self._env.extras.setdefault("log", {})["Metrics/success_rate"] = (
+                self._succeeded[env_ids].float().mean().item()
+            )
+            self._succeeded[env_ids] = False
+    def __call__(
+            self,
+            env:ManagerBasedRLEnv,
+            std:float,
+            minimal_height:float,
+            place_offset: float = 0.05,
+            object_cfg:SceneEntityCfg = SceneEntityCfg("cube_2"),
+            target_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
+            success_threshold: float | None = None,
+    )-> torch.Tensor:
+
+        obj : RigidObject = env.scene[object_cfg.name]
+        target : RigidObject = env.scene[target_cfg.name]
+
+        object_pos_w = obj.data.root_pos_w.torch
+        target_pos_w = target.data.root_pos_w.torch.clone()
+        target_pos_w[:,2] += place_offset
+
+        distance = torch.linalg.norm(object_pos_w - target_pos_w,dim = 1)
+
+        is_lifted = object_pos_w[:, 2] > minimal_height
+        if success_threshold is not None:
+            self._succeeded |= is_lifted & (distance < success_threshold)
+        return is_lifted.float() * (1 - torch.tanh(distance / std))
