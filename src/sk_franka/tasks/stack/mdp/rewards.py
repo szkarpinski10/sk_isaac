@@ -165,3 +165,30 @@ def cube_2_on_cube_1(
     cube_2_still = 1-torch.tanh(speed/speed_std)
 
     return stacked.float() * cube_2_still
+
+
+def release_when_aligned(
+    env: ManagerBasedRLEnv,
+    xy_threshold: float = 0.02,
+    height_diff: float = 0.05,
+    height_tolerance: float = 0.01,
+    grip_width: float = 0.025,
+    upper_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
+    lower_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    robot: Articulation = env.scene[robot_cfg.name]
+    upper: RigidObject = env.scene[upper_cfg.name]
+    lower: RigidObject = env.scene[lower_cfg.name]
+
+    pos_diff = upper.data.root_pos_w.torch - lower.data.root_pos_w.torch
+    xy_dist = torch.linalg.norm(pos_diff[:, :2], dim=1)
+    height_error = torch.abs(pos_diff[:, 2] - height_diff)
+    aligned = (xy_dist < xy_threshold) & (height_error < height_tolerance)
+
+    finger_ids, _ = robot.find_joints(env.cfg.gripper_joint_names)
+    finger_pos = robot.data.joint_pos.torch[:, finger_ids].mean(dim=1)
+    open_amount = torch.clamp(
+        (finger_pos - grip_width) / (env.cfg.gripper_open_val - grip_width), 0.0, 1.0
+    )
+    return aligned.float() * open_amount

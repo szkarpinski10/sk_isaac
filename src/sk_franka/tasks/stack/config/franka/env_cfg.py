@@ -309,6 +309,9 @@ class RewardsCfg:
         weight = 30.0,
     )
 
+    release = RewTerm(func=mdp.release_when_aligned, params={}, weight=30.0)
+
+
     # action penalty
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
 
