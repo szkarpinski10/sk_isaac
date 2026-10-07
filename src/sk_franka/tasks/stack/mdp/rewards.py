@@ -13,6 +13,7 @@ import torch
 
 from isaaclab.managers import ManagerTermBase, RewardTermCfg, SceneEntityCfg
 from isaaclab.utils.math import combine_frame_transforms
+from .terminations import cubes_stacked
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -138,5 +139,29 @@ class object_goal_distance_above_target(ManagerTermBase):
 
 
 
+def cube_2_on_cube_1(
+        env:ManagerBasedRLEnv,
+        xy_threshold:float = 0.02,
+        height_diff: float = 0.05,
+        atol: float = 0.005,
+        speed_std: float = 0.05,
+        cube_2_cfg:SceneEntityCfg = SceneEntityCfg("cube_2"),
 
-        
+
+) ->torch.Tensor: 
+    stacked = cubes_stacked(
+        env,
+        cube_3_cfg = None,
+        xy_threshold = xy_threshold,
+        height_diff = height_diff,
+        atol = atol,
+        rtol = 0.0,
+    )
+
+    cube_2_speed = env.scene[cube_2_cfg.name]
+    cube_2_velocity = cube_2_speed.data.root_lin_vel_w.torch
+    
+    speed = torch.linalg.norm(cube_2_velocity,dim=1)
+    cube_2_still = 1-torch.tanh(speed/speed_std)
+
+    return stacked.float() * cube_2_still

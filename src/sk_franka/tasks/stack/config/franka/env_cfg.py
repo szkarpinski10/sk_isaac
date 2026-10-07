@@ -303,6 +303,12 @@ class RewardsCfg:
         weight=2.0,
     )
 
+
+    cube_2_on_cube1 = RewTerm(
+        func=mdp.cube_2_on_cube_1, 
+        weight = 30.0,
+    )
+
     # action penalty
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
 
