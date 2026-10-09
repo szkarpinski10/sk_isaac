@@ -196,7 +196,60 @@ def release_cube(
     return cubes_aligned.float() * open_amount
 
 
+def home_return(
+    env:ManagerBasedRLEnv,
+    std:float = 1.0,
+    xy_threshold :float = 0.02,
+    height_diff:float = 0.05,
+    atol:float = 0.005,
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) ->torch.Tensor:
+    robot: Articulation = env.scene[robot_cfg.name]
+    arm_ids, _ = robot.find_joints(["panda_joint.*"])
+    joints_q = robot.data.joint_pos.torch[:, arm_ids]
+    joints_q_home = robot.data.default_joint_pos.torch[:,arm_ids]
+    err = torch.linalg.norm(joints_q - joints_q_home,dim = 1)
+    stacked = cubes_stacked(
+        env,cube_3_cfg = None, xy_threshold = xy_threshold, height_diff= height_diff, atol = atol, rtol = 0.0
+    )
 
+    
+
+    return stacked.float() * (1 - torch.tanh(err/std))
+
+class tower_knocked(ManagerTermBase):
+
+    def __init__(self, cfg, env):
+        super().__init__(cfg, env)
+        self._placed = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+        self._hold = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
+
+    def reset(self, env_ids=None):
+        if env_ids is None:
+            env_ids = slice(None)
+        self._placed[env_ids] = False
+        self._hold[env_ids] = 0
+
+    def __call__(
+        self,
+        env,
+        hold_steps: int = 10,
+        xy_threshold: float = 0.025,
+        height_diff: float = 0.05,
+        height_threshold: float = 0.01,
+        cube_1_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
+        cube_2_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
+    ) -> torch.Tensor:
+        diff = env.scene[cube_2_cfg.name].data.root_pos_w.torch - env.scene[cube_1_cfg.name].data.root_pos_w.torch
+        on_top = (torch.linalg.norm(diff[:, :2], dim=1) < xy_threshold) & (
+            torch.abs(diff[:, 2] - height_diff) < height_threshold
+        )
+        self._hold = torch.where(on_top, self._hold + 1, torch.zeros_like(self._hold))
+        self._placed |= self._hold >= hold_steps
+        return self._placed & ~on_top
+
+def arm_action_l2(env) -> torch.Tensor:
+    return torch.sum(torch.square(env.action_manager.action[:, :7]), dim=1)
 
 
 

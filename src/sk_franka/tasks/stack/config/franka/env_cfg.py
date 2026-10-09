@@ -311,6 +311,8 @@ class RewardsCfg:
 
     release = RewTerm(func=mdp.release_cube, params={}, weight=30.0)
 
+    home_return_fine_grained = RewTerm(func = mdp.home_return, params = {"std":1.0}, weight = 30)
+    home_return = RewTerm(func = mdp.home_return, params = {"std":3.0}, weight = 10)
 
     # action penalty
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
@@ -320,6 +322,14 @@ class RewardsCfg:
         weight=-1e-4,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
+
+    tower_knocked_penalty = RewTerm(
+        func = mdp.is_terminated_term,
+        params = {"term_keys": "tower_knocked"},
+        weight = -300.0,
+    )
+
+    arm_action_l2 = RewTerm(func=mdp.arm_action_l2, weight=-0.05)
 
 
 @configclass
@@ -335,6 +345,8 @@ class CurriculumCfg:
     joint_vel = CurrTerm(
         func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -1e-1, "num_steps": 10000}
     )
+
+    
 
 @configclass
 class TerminationsCfg:
@@ -357,10 +369,9 @@ class TerminationsCfg:
         func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cube_3")}
     )
 
-    # success = DoneTerm(func=mdp.cubes_stacked, 
-    #     params = {"cube_3_cfg":None, "xy_threshold:"0.02, "height_diff": 0.05, "atol":0.005, "rtol":0.0}, 
-    #     )
-    
+    tower_knocked = DoneTerm(
+        func = mdp.tower_knocked
+    )
 
 ##
 # Environment configuration
