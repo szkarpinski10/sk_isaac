@@ -273,12 +273,11 @@ class EventCfg:
     )
 
     randomize_cube_positions = EventTerm(
-        func=mdp.randomize_object_pose,
+        func=mdp.rand_tower_pos_and_cube_3,
         mode="reset",
         params={
             "pose_range": {"x": (0.4, 0.6), "y": (-0.10, 0.10), "z": (0.025, 0.025), "yaw": (-1.0, 1.0)},
             "min_separation": 0.1,
-            "asset_cfgs": [SceneEntityCfg("cube_1"), SceneEntityCfg("cube_2"), SceneEntityCfg("cube_3")],
         },
     )
 
@@ -287,8 +286,8 @@ class EventCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
-    reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.1, "object_cfg": SceneEntityCfg("cube_2")}, weight=1.0)
-    lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.04, "object_cfg":SceneEntityCfg("cube_2")}, weight=3.0)
+    reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.1, "object_cfg": SceneEntityCfg("cube_3")}, weight=1.0)
+    lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.04, "object_cfg":SceneEntityCfg("cube_3")}, weight=3.0)
 
     # naprowadzanie cube 2
     object_goal_tracking = RewTerm(
@@ -304,21 +303,27 @@ class RewardsCfg:
     )
 
 
-    cube_2_on_cube1 = RewTerm(
-        func=mdp.cube_2_on_cube_1, 
+    cube_3_on_cube_2 = RewTerm(
+        func=mdp.cube_3_on_cube_2, 
         weight = 50.0,
     )
 
     release = RewTerm(func=mdp.release_cube, params={}, weight=30.0)
 
 
-    # action penalty
+    # penalty
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
 
     joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
         weight=-1e-4,
         params={"asset_cfg": SceneEntityCfg("robot")},
+    )
+
+    tower_destroyed_penalty=RewTerm(
+        func=mdp.is_terminated_term,
+        params={"term_keys":"tower_destroyed"},
+        weight = 0.0,
     )
 
 
@@ -334,6 +339,10 @@ class CurriculumCfg:
 
     joint_vel = CurrTerm(
         func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -1e-1, "num_steps": 10000}
+    )
+
+    tower_penalty = CurrTerm(
+        func = mdp.modify_reward_weight, params = {"term_name":"tower_destroyed_penalty","weight": -40, "num_steps": 15000}
     )
 
 @configclass
@@ -355,6 +364,10 @@ class TerminationsCfg:
 
     cube_3_dropping = DoneTerm(
         func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cube_3")}
+    )
+
+    tower_destroyed = DoneTerm(
+        func = mdp.tower_destroyed,
     )
 
     # success = DoneTerm(func=mdp.cubes_stacked, 

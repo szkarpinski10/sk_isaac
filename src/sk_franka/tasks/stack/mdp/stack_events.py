@@ -134,3 +134,54 @@ def randomize_object_pose(
             asset.write_root_velocity_to_sim_index(
                 root_velocity=torch.zeros(1, 6, device=env.device), env_ids=torch.tensor([cur_env], device=env.device)
             )
+
+
+def rand_tower_pos_and_cube_3(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor,
+    cube_1_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
+    cube_2_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
+    cube_3_cfg: SceneEntityCfg = SceneEntityCfg("cube_3"),
+    min_separation: float = 0.14,
+    pose_range: dict[str, tuple[float, float]] = {},
+    max_sample_tries: int = 5000,
+    cube_size : float  = 0.05,
+    stack_gap : float = 0.001,
+    xy_rand: float = 0.01,
+    yaw_rand: float = 0.5,
+
+): 
+    if env_ids is None:
+        return
+    
+    for cur_env in env_ids.tolist():
+        pose_list = sample_object_poses(
+            num_objects=2,
+            min_separation=min_separation,
+            pose_range=pose_range,
+            max_sample_tries=max_sample_tries,
+        )
+    
+        cube_1_pose = pose_list[0]
+        cube_2_pose = [
+            cube_1_pose[0] + random.uniform(-xy_rand,xy_rand),
+            cube_1_pose[1] + random.uniform(-xy_rand,xy_rand),
+            cube_1_pose[2] + cube_size + stack_gap, 
+            cube_1_pose[3],
+            cube_1_pose[4],
+            cube_1_pose[5] + random.uniform(-yaw_rand,yaw_rand),
+            ]
+        cube_3_pose = pose_list[1]
+
+        for cfg, pose in ((cube_1_cfg,cube_1_pose,),(cube_2_cfg,cube_2_pose),(cube_3_cfg,cube_3_pose)):
+            asset = env.scene[cfg.name]
+            pose_tensor = torch.tensor([pose], device=env.device)
+            positions = pose_tensor[:, 0:3] + env.scene.env_origins[cur_env, 0:3]
+            orientations = math_utils.quat_from_euler_xyz(pose_tensor[:, 3], pose_tensor[:, 4], pose_tensor[:, 5])
+            asset.write_root_pose_to_sim_index(
+                root_pose=torch.cat([positions, orientations], dim=-1),
+                env_ids=torch.tensor([cur_env], device=env.device),
+            )
+            asset.write_root_velocity_to_sim_index(
+                root_velocity=torch.zeros(1, 6, device=env.device), env_ids=torch.tensor([cur_env], device=env.device)
+            )

@@ -94,3 +94,24 @@ def cubes_stacked(
             raise ValueError("No gripper_joint_names found in environment config")
 
     return stacked
+
+
+def tower_destroyed(
+    env:ManagerBasedRLEnv,
+    cube_1_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
+    cube_2_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
+    xy_threshold: float = 0.025,
+    height_diff : float = 0.05,
+    height_threshold : float = 0.01,
+
+)-> torch.Tensor:
+    cube_1: RigidObject = env.scene[cube_1_cfg.name]
+    cube_2: RigidObject = env.scene[cube_2_cfg.name]
+
+    pos_diff_c21 = cube_2.data.root_pos_w.torch - cube_1.data.root_pos_w.torch
+    xy_dist_c21 = torch.linalg.norm(pos_diff_c21[:, :2], dim=1)
+    z_diff = torch.abs(pos_diff_c21[:,2]-height_diff)
+
+    stacked = (xy_dist_c21 < xy_threshold) & (z_diff < height_threshold)
+
+    return(~stacked)

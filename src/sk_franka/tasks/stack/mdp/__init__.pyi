@@ -25,13 +25,15 @@ __all__ = [
     "object_goal_distance",
     "object_is_lifted",
     "object_goal_distance_above_target",
-    "cube_2_on_cube_1",
+    "cube_3_on_cube_2",
     "release_cube",
     # terminations
     "cubes_stacked",
+    "tower_destroyed",
     #stack_events
     "randomize_object_pose",
     "randomize_joint_by_gaussian_offset",
+    "rand_tower_pos_and_cube_3",
 ]
 
 # Forward stable MDP terms lazily, then override with environment-specific terms below.
@@ -39,6 +41,6 @@ from isaaclab.envs.mdp import *  # noqa: F401, F403
 
 
 from .observations import ee_frame_pos, ee_frame_quat, gripper_pos, object_position_in_robot_root_frame, ee_frame_pose_in_base_frame, object_abs_obs_in_base_frame, cube_poses_in_base_frame, object_stacked, object_grasped, instance_randomize_object_obs, object_obs, cube_orientations_in_world_frame, instance_randomize_cube_positions_in_world_frame, cube_positions_in_world_frame, object_position_in_robot_root_frame
-from .rewards import object_ee_distance, object_goal_distance, object_is_lifted, object_goal_distance_above_target, cube_2_on_cube_1, release_cube 
-from .terminations import cubes_stacked
-from .stack_events import randomize_object_pose, randomize_joint_by_gaussian_offset
+from .rewards import object_ee_distance, object_goal_distance, object_is_lifted, object_goal_distance_above_target, cube_3_on_cube_2, release_cube 
+from .terminations import cubes_stacked, tower_destroyed
+from .stack_events import randomize_object_pose, randomize_joint_by_gaussian_offset, rand_tower_pos_and_cube_3

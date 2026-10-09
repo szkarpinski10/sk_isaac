@@ -118,8 +118,8 @@ class object_goal_distance_above_target(ManagerTermBase):
             std:float,
             minimal_height:float,
             place_offset: float = 0.05,
-            object_cfg:SceneEntityCfg = SceneEntityCfg("cube_2"),
-            target_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
+            object_cfg:SceneEntityCfg = SceneEntityCfg("cube_3"),
+            target_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
             success_threshold: float | None = None,
     )-> torch.Tensor:
 
@@ -139,32 +139,31 @@ class object_goal_distance_above_target(ManagerTermBase):
 
 
 
-def cube_2_on_cube_1(
+def cube_3_on_cube_2(
         env:ManagerBasedRLEnv,
         xy_threshold:float = 0.02,
         height_diff: float = 0.05,
         atol: float = 0.005,
         speed_std: float = 0.05,
-        cube_2_cfg:SceneEntityCfg = SceneEntityCfg("cube_2"),
+        cube_3_cfg:SceneEntityCfg = SceneEntityCfg("cube_3"),
 
 
 ) ->torch.Tensor: 
     stacked = cubes_stacked(
         env,
-        cube_3_cfg = None,
         xy_threshold = xy_threshold,
         height_diff = height_diff,
         atol = atol,
         rtol = 0.0,
     )
 
-    cube_2_speed = env.scene[cube_2_cfg.name]
-    cube_2_velocity = cube_2_speed.data.root_lin_vel_w.torch
+    cube_3_speed = env.scene[cube_3_cfg.name]
+    cube_3_velocity = cube_3_speed.data.root_lin_vel_w.torch
     
-    speed = torch.linalg.norm(cube_2_velocity,dim=1)
-    cube_2_still = 1-torch.tanh(speed/speed_std)
+    speed = torch.linalg.norm(cube_3_velocity,dim=1)
+    cube_3_still = 1-torch.tanh(speed/speed_std)
 
-    return stacked.float() * cube_2_still
+    return stacked.float() * cube_3_still
 
 
 def release_cube(
@@ -173,27 +172,27 @@ def release_cube(
     height_diff: float = 0.05,
     height_tolerance: float = 0.01,
     grip_width: float = 0.025,
-    cube_1_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
     cube_2_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
+    cube_3_cfg: SceneEntityCfg = SceneEntityCfg("cube_3"),
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ) -> torch.Tensor:
     robot: Articulation = env.scene[robot_cfg.name]
-    cube_1: RigidObject = env.scene[cube_1_cfg.name]
     cube_2: RigidObject = env.scene[cube_2_cfg.name]
+    cube_3: RigidObject = env.scene[cube_3_cfg.name]
     finger_ids, _ = robot.find_joints(env.cfg.gripper_joint_names)
 
-    cube_1_pos = cube_1.data.root_pos_w.torch
     cube_2_pos = cube_2.data.root_pos_w.torch
-    cubes_diff = cube_2_pos - cube_1_pos
+    cube_3_pos = cube_3.data.root_pos_w.torch
+    cubes_diff = cube_3_pos - cube_2_pos
 
     xy_dist = torch.linalg.norm(cubes_diff[:, [0, 1]], dim=1)
     height_error = torch.abs(cubes_diff[:, 2] - height_diff)
     cubes_aligned = (xy_dist < xy_threshold) & (height_error < height_tolerance)
 
     
-    finger_pos = robot.data.joint_pos.torch[:, finger_ids].mean(dim=1)
-    open_amount = torch.clamp((finger_pos - grip_width) / (env.cfg.gripper_open_val - grip_width), 0.0, 1.0)
-    return cubes_aligned.float() * open_amount
+    finger_pos = robot.data.joint_pos.torch[:, finger_ids]
+    fully_open_gripper = (finger_pos > env.cfg.gripper_open_val - 0.005).all(dim=1)
+    return cubes_aligned.float() * fully_open_gripper 
 
 
 
