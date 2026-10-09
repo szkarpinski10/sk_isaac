@@ -244,7 +244,7 @@ class ObservationsCfg:
 
 
         # cubes
-        object = ObsTerm(func=mdp.object_obs)
+        cubes_pos = ObsTerm(func=mdp.object_obs)
         
 
 
@@ -262,15 +262,15 @@ class EventCfg:
 
     reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
 
-    # randomize_franka_joint_state = EventTerm(
-    #     func=mdp.reset_joints_by_offset,
-    #     mode="reset",
-    #     params={
-    #         "position_range": (-0.1, 0.1),
-    #         "velocity_range": (0.0, 0.0),
-    #         "asset_cfg": SceneEntityCfg("robot"),
-    #     },
-    # )
+    randomize_joint_state = EventTerm(
+        func=mdp.randomize_joint_by_gaussian_offset,
+        mode="reset",
+        params={
+            "mean": 0.0,
+            "std": 0.02,
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
+    )
 
     randomize_cube_positions = EventTerm(
         func=mdp.randomize_object_pose,
@@ -288,11 +288,7 @@ class RewardsCfg:
     """Reward terms for the MDP."""
 
     reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.1, "object_cfg": SceneEntityCfg("cube_2")}, weight=1.0)
-    reaching_cube_3 = RewTerm(func=mdp.object_ee_distance_cube_3,params={"std": 0.1},  weight = 5.0)
-
     lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.04, "object_cfg":SceneEntityCfg("cube_2")}, weight=3.0)
-    #lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.04, "object_cfg":SceneEntityCfg("cube_3")}, weight=3.0)
-
 
     # naprowadzanie cube 2
     object_goal_tracking = RewTerm(
@@ -307,22 +303,10 @@ class RewardsCfg:
         weight=2.0,
     )
 
-    # naprowadzanie cube 3
-    # object_goal_tracking_cube_3 = RewTerm(
-    #     func=mdp.object_goal_distance_above_target,
-    #     params={"std": 0.3, "minimal_height": 0.04,"object_cfg":SceneEntityCfg("cube_3"),"target_cfg":SceneEntityCfg("cube_2"), "success_threshold": 0.05},
-    #     weight=4.0,
-    # )
-
-    # object_goal_tracking_fine_grained_cube_3 = RewTerm(
-    #     func=mdp.object_goal_distance_above_target,
-    #     params={"std": 0.05,"object_cfg":SceneEntityCfg("cube_3"),"target_cfg":SceneEntityCfg("cube_2"), "minimal_height": 0.04},
-    #     weight=2.0,
-    # )
 
     cube_2_on_cube1 = RewTerm(
         func=mdp.cube_2_on_cube_1, 
-        weight = 30.0,
+        weight = 50.0,
     )
 
     release = RewTerm(func=mdp.release_cube, params={}, weight=30.0)
@@ -340,7 +324,7 @@ class RewardsCfg:
 
 @configclass
 class CommandsCfg:
-  pass
+    pass
 
 @configclass
 class CurriculumCfg:
@@ -373,7 +357,9 @@ class TerminationsCfg:
         func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cube_3")}
     )
 
-    success = DoneTerm(func=mdp.cubes_stacked)
+    # success = DoneTerm(func=mdp.cubes_stacked, 
+    #     params = {"cube_3_cfg":None, "xy_threshold:"0.02, "height_diff": 0.05, "atol":0.005, "rtol":0.0}, 
+    #     )
     
 
 ##

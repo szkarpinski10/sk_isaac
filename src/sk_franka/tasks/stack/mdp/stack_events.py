@@ -26,7 +26,51 @@ if TYPE_CHECKING:
     from isaaclab.assets import Articulation
     from isaaclab.envs import ManagerBasedEnv
 
+def randomize_joint_by_gaussian_offset(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor,
+    mean: float,
+    std: float,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+):
+    """Add Gaussian noise to the (non-gripper) joints of an asset on reset.
 
+    The gripper joints are restored to their default pose rather than noised. They are resolved
+    generically from ``env.cfg.gripper_joint_names`` (the same names the stack observations and
+    terminations already use) instead of assuming the last two joints are the gripper -- the latter
+    is Franka-specific and wrong for, e.g., the single-jaw SO-101 gripper or a UR10 surface gripper.
+
+    Behavior of ``env.cfg.gripper_joint_names``:
+
+    * a non-empty list -> those joints are held at their default pose (everything else is noised);
+    * an empty list -> no gripper joints to hold, so every joint is noised (e.g. surface grippers);
+    * unset / ``None`` -> backward-compatible fallback that holds the last two joints.
+    """
+    asset: Articulation = env.scene[asset_cfg.name]
+
+    # Add gaussian noise to joint states
+    joint_pos = asset.data.default_joint_pos.torch[env_ids].clone()
+    joint_vel = asset.data.default_joint_vel.torch[env_ids].clone()
+    joint_pos += math_utils.sample_gaussian(mean, std, joint_pos.shape, joint_pos.device)
+
+    # Clamp joint pos to limits
+    joint_pos_limits = asset.data.soft_joint_pos_limits.torch[env_ids]
+    joint_pos = joint_pos.clamp_(joint_pos_limits[..., 0], joint_pos_limits[..., 1])
+
+    # Don't noise the gripper joints (resolved generically; see the docstring).
+    gripper_joint_names = getattr(env.cfg, "gripper_joint_names", None)
+    if gripper_joint_names is None:
+        # Backward-compatible fallback for callers that do not configure gripper joint names.
+        joint_pos[:, -2:] = asset.data.default_joint_pos.torch[env_ids, -2:]
+    elif gripper_joint_names:
+        gripper_ids, _ = asset.find_joints(gripper_joint_names)
+        joint_pos[:, gripper_ids] = asset.data.default_joint_pos.torch[env_ids][:, gripper_ids]
+
+    # Set into the physics simulation
+    asset.set_joint_position_target_index(target=joint_pos, env_ids=env_ids)
+    asset.set_joint_velocity_target_index(target=joint_vel, env_ids=env_ids)
+    asset.write_joint_position_to_sim_index(position=joint_pos, env_ids=env_ids)
+    asset.write_joint_velocity_to_sim_index(velocity=joint_vel, env_ids=env_ids)
 
 def sample_object_poses(
     num_objects: int,
