@@ -420,3 +420,22 @@ class StackEnvCfg(ManagerBasedRLEnvCfg):
             gpu_total_aggregate_pairs_capacity=16 * 1024,
             friction_correlation_distance=0.00625,
         )
+
+
+@configclass
+class MergeCfg(StackEnvCfg):
+    def __post_init__(self)->None:
+        super().__post_init__()
+        self.episode_length_s = 25
+        self.events.randomize_cube_positions = EventTerm(
+            func = mdp.randomize_object_pose,
+            mode = "reset",
+            params = {
+                "asset_cfgs":[SceneEntityCfg("cube_1"), SceneEntityCfg("cube_2"), SceneEntityCfg("cube_3")],
+                "pose_range": {"x": (0.4, 0.6), "y": (-0.10, 0.10), "z": (0.025, 0.025), "yaw": (-1.0, 1.0)},
+                "min_separation": 0.13,
+            },
+        )
+        self.terminations.tower_destroyed = None
+        self.rewards.tower_destroyed_penalty = None
+        self.curriculum.tower_penalty = None
