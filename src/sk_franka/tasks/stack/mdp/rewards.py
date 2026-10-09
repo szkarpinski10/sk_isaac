@@ -195,7 +195,8 @@ def release_cube(
     return cubes_aligned.float() * fully_open_gripper 
 
 
-
+def arm_action_l2(env) -> torch.Tensor:
+    return torch.sum(torch.square(env.action_manager.action[:, :7]), dim=1)
 
 
 

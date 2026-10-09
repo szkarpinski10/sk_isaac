@@ -267,7 +267,7 @@ class EventCfg:
         mode="reset",
         params={
             "mean": 0.0,
-            "std": 0.02,
+            "std": 0.05,
             "asset_cfg": SceneEntityCfg("robot"),
         },
     )
@@ -277,7 +277,7 @@ class EventCfg:
         mode="reset",
         params={
             "pose_range": {"x": (0.4, 0.6), "y": (-0.10, 0.10), "z": (0.025, 0.025), "yaw": (-1.0, 1.0)},
-            "min_separation": 0.1,
+            "min_separation": 0.12,
         },
     )
 
@@ -326,6 +326,8 @@ class RewardsCfg:
         weight = 0.0,
     )
 
+    arm_action_l2 = RewTerm(func=mdp.arm_action_l2, weight=-0.05)
+
 
 @configclass
 class CommandsCfg:
@@ -342,7 +344,7 @@ class CurriculumCfg:
     )
 
     tower_penalty = CurrTerm(
-        func = mdp.modify_reward_weight, params = {"term_name":"tower_destroyed_penalty","weight": -40, "num_steps": 15000}
+        func = mdp.modify_reward_weight, params = {"term_name":"tower_destroyed_penalty","weight": -300, "num_steps": 15000}
     )
 
 @configclass
