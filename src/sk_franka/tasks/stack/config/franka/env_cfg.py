@@ -131,12 +131,7 @@ class ActionsCfg:
     arm_action = mdp.JointPositionActionCfg(
             asset_name="robot", joint_names=["panda_joint.*"], scale=0.5, use_default_offset=True
     )
-    gripper_action = mdp.BinaryJointPositionActionCfg(
-            asset_name="robot",
-            joint_names=["panda_finger.*"],
-            open_command_expr={"panda_finger_.*": 0.04},
-            close_command_expr={"panda_finger_.*": 0.0},
-    )
+    gripper_action = None
 
 
 @configclass
@@ -157,7 +152,6 @@ class ObservationsCfg:
         # ee 
         eef_pos = ObsTerm(func=mdp.ee_frame_pos)
         eef_quat = ObsTerm(func=mdp.ee_frame_quat)
-        gripper_pos = ObsTerm(func=mdp.gripper_pos)
 
         #pose command
         pose_command = ObsTerm(func=mdp.generated_commands, params={"command_name": "ee_pose"})
@@ -201,7 +195,15 @@ class RewardsCfg:
         weight=-0.1,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=["panda_hand"]), "command_name": "ee_pose"},
     )
-    success = RewTerm(func=mdp.is_terminated_term, weight=10.0, params={"term_keys": ["success"]})
+
+    ee_tracking= RewTerm(
+        func=mdp.position_command_error_tanh,
+        params = {
+            "asset_cfg":SceneEntityCfg("robot",body_names = ["panda_hand"]), "std": 0.1, "command_name":"ee_pose", 
+            
+        },
+        weight = 0.1,
+    )
 
     # control and physical motion penalties
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
@@ -209,7 +211,7 @@ class RewardsCfg:
     joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
         weight=-0.0001,
-        params={"asset_cfg": SceneEntityCfg("robot")},
+        params={"asset_cfg": SceneEntityCfg("robot",joint_names = ["panda_joint.*"])},
     )
 
 
@@ -250,10 +252,7 @@ class TerminationsCfg:
     # (1) Time out
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
 
-    success = DoneTerm(
-        func=mdp.pose_command_success,
-        params={"command_name": "ee_pose"},
-    )
+    
     
 
 ##
