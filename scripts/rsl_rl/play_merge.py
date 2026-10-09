@@ -76,6 +76,13 @@ parser.add_argument(
 parser.add_argument("--home_steps", type=int, default=60, help="Dlugosc plynnego przejazdu do pozycji domowej (w krokach; 50 krokow = 1 s).")
 parser.add_argument("--home_max_steps", type=int, default=200, help="Maksymalna liczba krokow fazy powrotu (potem i tak startuje polityka 2).")
 parser.add_argument("--home_tol", type=float, default=0.03, help="Tolerancja [rad] bledu stawow uznawana za 'jestem w domu'.")
+parser.add_argument(
+    "--arm_home_tol",
+    type=float,
+    default=0.0,
+    help="Jesli > 0: przelacz na polityke 2 dopiero gdy norma bledu stawow ramienia wzgledem pozycji domowej "
+    "jest mniejsza niz ta wartosc [rad] (tak jak w nagrodzie home_return). 0 = wylaczone.",
+)
 cli_args.add_rsl_rl_args(parser)
 add_launcher_args(parser)
 add_frontend_args(parser)
@@ -149,6 +156,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         q_start = torch.zeros(n, len(arm_ids), device=device)
         # statystyki czasu: srednia liczba krokow do przelaczenia i na powrot do domu
         sum_p0 = 0
+        sum_arm_err = 0.0
         cnt_p0 = 0
         sum_home = 0
         cnt_home = 0
@@ -156,6 +164,15 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         succ_cnt = torch.zeros(n, dtype=torch.long, device=device)  # ile krokow pod rząd stoją 3 kostki
         success = torch.zeros(n, dtype=torch.bool, device=device)  # sukces osiagniety w tym epizodzie
         handed = torch.zeros(n, dtype=torch.bool, device=device)  # w tym epizodzie nastapilo przelaczenie
+        # diagnostyka: stan w chwili przelaczenia, zrzucenie wiezy, wielkosc akcji ramienia
+        sw_err = torch.zeros(n, device=device)  # blad stawow ramienia w chwili przelaczenia
+        sw_xy = torch.zeros(n, device=device)  # przesuniecie xy cube_2 wzgledem cube_1 w chwili przelaczenia
+        knocked = torch.zeros(n, dtype=torch.bool, device=device)  # po przelaczeniu cube_2 zjechala z cube_1
+        bad_cnt = torch.zeros(n, dtype=torch.long, device=device)
+        err_s, xy_s, err_f, xy_f = [], [], [], []
+        n_fail_h = 0
+        n_knock = 0
+        a1_abs, a1_n, a2_abs, a2_n = 0.0, 0, 0.0, 0
  
         finished = 0
         n_handoff = 0
@@ -175,6 +192,14 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                     )
                     ph = phase.unsqueeze(-1)
                     actions = torch.where(ph == 0, a1, torch.where(ph == 1, home_action, a2))
+                    m0 = phase == 0
+                    m2 = phase == 2
+                    if m0.any():
+                        a1_abs += float(a1[m0, :7].abs().mean(dim=1).sum().item())
+                        a1_n += int(m0.sum().item())
+                    if m2.any():
+                        a2_abs += float(a2[m2, :7].abs().mean(dim=1).sum().item())
+                        a2_n += int(m2.sum().item())
                     obs, _, dones, _ = env.step(actions)
                     reset_1(dones)
                     reset_2(dones)
@@ -196,14 +221,24 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                     # faza 1: licznik 'para cube_2/cube_1 stoi nieruchomo z otwartym chwytakiem'
                     pair_still = pair & (cube_2_speed < args_cli.max_speed) & (phase == 0) & alive
                     hold_cnt = torch.where(pair_still, hold_cnt + 1, torch.zeros_like(hold_cnt))
-                    switch = (phase == 0) & (hold_cnt >= args_cli.hold_steps) & alive
+                    # blad stawow ramienia wzgledem domu (norma, jak w nagrodzie home_return)
+                    arm_err = torch.linalg.norm(
+                        robot.data.joint_pos.torch[:, arm_ids] - robot.data.default_joint_pos.torch[:, arm_ids], dim=1
+                    )
+                    arm_ok = (arm_err < args_cli.arm_home_tol) if args_cli.arm_home_tol > 0 else torch.ones_like(pair)
+                    switch = (phase == 0) & (hold_cnt >= args_cli.hold_steps) & arm_ok & alive
                     next_phase = 2 if args_cli.no_home else 1
                     phase = torch.where(switch, torch.full_like(phase, next_phase), phase)
                     handed |= switch
                     if switch.any():
                         q_start[switch] = robot.data.joint_pos.torch[:, arm_ids][switch]
                         sum_p0 += int(ep_step[switch].sum().item())
+                        sum_arm_err += float(arm_err[switch].sum().item())
                         cnt_p0 += int(switch.sum().item())
+                        c1_pos = base.scene["cube_1"].data.root_pos_w.torch
+                        c2_pos = base.scene["cube_2"].data.root_pos_w.torch
+                        sw_err[switch] = arm_err[switch]
+                        sw_xy[switch] = torch.linalg.norm((c2_pos - c1_pos)[:, :2], dim=1)[switch]
  
                     # faza 1: przejazd do pozycji domowej, potem polityka 2
                     homing = (phase == 1) & alive
@@ -218,6 +253,13 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                         cnt_home += int(go_p2.sum().item())
                     phase = torch.where(go_p2, torch.full_like(phase, 2), phase)
  
+                    # zrzucenie wiezy po przelaczeniu: cube_2 nie lezy na cube_1 przez >= 5 krokow pod rzad
+                    d12 = base.scene["cube_2"].data.root_pos_w.torch - base.scene["cube_1"].data.root_pos_w.torch
+                    intact = (torch.linalg.norm(d12[:, :2], dim=1) < 0.04) & ((d12[:, 2] - 0.05).abs() < 0.02)
+                    track = (phase == 2) & handed & alive
+                    bad_cnt = torch.where(track & ~intact, bad_cnt + 1, torch.zeros_like(bad_cnt))
+                    knocked |= (bad_cnt >= 5) & alive
+ 
                     # sukces: 3 kostki w wiezy, chwytak otwarty, nieruchomo przez success_hold krokow
                     tower_still = (
                         tower & (cube_3_speed < args_cli.max_speed) & (cube_2_speed < args_cli.max_speed) & alive
@@ -230,6 +272,17 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                         finished += int(dones.sum().item())
                         n_handoff += int(handed[dones].sum().item())
                         n_success += int(success[dones].sum().item())
+                        dh = dones & handed
+                        ds = dh & success
+                        df = dh & ~success
+                        err_s += sw_err[ds].tolist()
+                        xy_s += sw_xy[ds].tolist()
+                        err_f += sw_err[df].tolist()
+                        xy_f += sw_xy[df].tolist()
+                        n_fail_h += int(df.sum().item())
+                        n_knock += int((df & knocked).sum().item())
+                        knocked[dones] = False
+                        bad_cnt[dones] = 0
                         phase[dones] = 0
                         ep_step[dones] = 0
                         home_cnt[dones] = 0
@@ -251,8 +304,19 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         print(f"Pelny sukces (3 kostki): {n_success}  ({100.0 * n_success / max(finished, 1):.1f}%)")
         if cnt_p0:
             print(f"Sredni czas do przelaczenia (polityka 1): {sum_p0 / cnt_p0:.0f} krokow = {sum_p0 / cnt_p0 * 0.02:.1f} s")
+        if cnt_p0:
+            print(f"Sredni blad stawow ramienia w chwili przelaczenia: {sum_arm_err / cnt_p0:.3f} rad (norma)")
         if cnt_home:
             print(f"Sredni czas powrotu do domu:               {sum_home / cnt_home:.0f} krokow = {sum_home / cnt_home * 0.02:.1f} s")
+        print("-" * 70)
+        print(f"Porazki po przelaczeniu: {n_fail_h}  (w tym cube_2 zrzucona z cube_1: {n_knock})")
+ 
+        def _mean(xs):
+            return sum(xs) / len(xs) if xs else float("nan")
+ 
+        print(f"Przy przelaczeniu, SUKCESY:  blad stawow {_mean(err_s):.3f} rad, przesuniecie xy cube_2/cube_1 {_mean(xy_s) * 100:.2f} cm  (n={len(err_s)})")
+        print(f"Przy przelaczeniu, PORAZKI:  blad stawow {_mean(err_f):.3f} rad, przesuniecie xy cube_2/cube_1 {_mean(xy_f) * 100:.2f} cm  (n={len(err_f)})")
+        print(f"Srednia |akcja| ramienia (na staw): polityka 1 = {a1_abs / max(a1_n, 1):.2f}, polityka 2 = {a2_abs / max(a2_n, 1):.2f}")
         print("=" * 70)
         env.close()
  
