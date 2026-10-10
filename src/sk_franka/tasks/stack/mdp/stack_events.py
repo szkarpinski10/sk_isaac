@@ -148,7 +148,7 @@ def rand_tower_pos_and_cube_3(
     cube_size : float  = 0.05,
     stack_gap : float = 0.001,
     xy_rand: float = 0.01,
-    yaw_rand: float = 0.5,
+    yaw_rand: float = math.pi,
 
 ): 
     if env_ids is None:
