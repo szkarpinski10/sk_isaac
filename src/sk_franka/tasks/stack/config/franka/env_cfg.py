@@ -44,17 +44,17 @@ from isaaclab_assets.robots.franka import FRANKA_PANDA_CFG  # isort: skip
 
 
 _FRANKA_STACK_IK_REL_INIT_JOINT_POS: dict[str, float] = {
-    "panda_joint1": 0.0444,
-    "panda_joint2": -0.1894,
-    "panda_joint3": -0.1107,
-    "panda_joint4": -2.5148,
-    "panda_joint5": 0.0044,
-    "panda_joint6": 2.3775,
-    "panda_joint7": 0.6952,
+    "panda_joint1": 0.0,
+    "panda_joint2": -0.3,
+    "panda_joint3": 0.0,
+    "panda_joint4": -2.0,
+    "panda_joint5": 0.0,
+    "panda_joint6": 1.7,
+    "panda_joint7": 0.785,
     "panda_finger_joint.*": 0.0400,
 }
 
-
+_VEL = 1.5
 
 @configclass
 class StackSceneCfg(InteractiveSceneCfg):
@@ -267,7 +267,7 @@ class EventCfg:
         mode="reset",
         params={
             "mean": 0.0,
-            "std": 0.02,
+            "std": 0.01,
             "asset_cfg": SceneEntityCfg("robot"),
         },
     )
@@ -420,6 +420,9 @@ class StackEnvCfg(ManagerBasedRLEnvCfg):
             gpu_total_aggregate_pairs_capacity=16 * 1024,
             friction_correlation_distance=0.00625,
         )
+
+        for name in ("panda_shoulder", "panda_forearm"):
+            self.scene.robot.actuators[name].velocity_limit_sim = _VEL
 
 
 @configclass
