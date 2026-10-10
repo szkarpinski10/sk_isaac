@@ -172,7 +172,7 @@ def release_cube(
     xy_threshold: float = 0.02,
     height_diff: float = 0.05,
     height_tolerance: float = 0.01,
-    grip_width: float = 0.025,
+    grip_width: float = 0.037,
     cube_1_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
     cube_2_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
@@ -187,13 +187,17 @@ def release_cube(
     cubes_diff = cube_2_pos - cube_1_pos
 
     xy_dist = torch.linalg.norm(cubes_diff[:, [0, 1]], dim=1)
-    height_error = torch.abs(cubes_diff[:, 2] - height_diff)
-    cubes_aligned = (xy_dist < xy_threshold) & (height_error < height_tolerance)
+    height_error = cubes_diff[:, 2] - height_diff
+    dist = torch.sqrt(xy_dist**2 + height_error**2)
+    near = 1.0 - torch.tanh(dist / 0.02)
 
-    
     finger_pos = robot.data.joint_pos.torch[:, finger_ids].mean(dim=1)
     open_amount = torch.clamp((finger_pos - grip_width) / (env.cfg.gripper_open_val - grip_width), 0.0, 1.0)
-    return cubes_aligned.float() * open_amount
+
+
+    grip_action = env.action_manager.action[:, 7]
+    open_intent = torch.sigmoid(3.0 * grip_action)
+    return near * (0.7 * open_amount + 0.3 * open_intent)
 
 
 def home_return(
@@ -244,12 +248,17 @@ class tower_knocked(ManagerTermBase):
         on_top = (torch.linalg.norm(diff[:, :2], dim=1) < xy_threshold) & (
             torch.abs(diff[:, 2] - height_diff) < height_threshold
         )
-        self._hold = torch.where(on_top, self._hold + 1, torch.zeros_like(self._hold))
+
+        robot = env.scene["robot"]
+        finger_ids, _ = robot.find_joints(env.cfg.gripper_joint_names)
+        is_open = (robot.data.joint_pos.torch[:, finger_ids] > env.cfg.gripper_open_val - 0.005).all(dim=1)
+
+        self._hold = torch.where(on_top & is_open, self._hold + 1, torch.zeros_like(self._hold))
         self._placed |= self._hold >= hold_steps
         return self._placed & ~on_top
 
 def arm_action_l2(env) -> torch.Tensor:
-    return torch.sum(torch.square(env.action_manager.action[:, :7]), dim=1)
+    return torch.sum(torch.square(env.action_manager.action[:, :8]), dim=1)
 
 
 
