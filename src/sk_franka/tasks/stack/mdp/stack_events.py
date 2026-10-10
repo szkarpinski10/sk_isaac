@@ -168,8 +168,8 @@ def rand_tower_pos_and_cube_3(
             cube_1_pose[0] + random.uniform(-xy_rand,xy_rand),
             cube_1_pose[1] + random.uniform(-xy_rand,xy_rand),
             cube_1_pose[2] + cube_size + stack_gap, 
-            cube_1_pose[3],
-            cube_1_pose[4],
+            random.randint(0,3) * math.pi/2,
+            random.randint(0,3) * math.pi/2,
             cube_1_pose[5] + random.uniform(-yaw_rand,yaw_rand),
             ]
         cube_3_pose = pose_list[1]
