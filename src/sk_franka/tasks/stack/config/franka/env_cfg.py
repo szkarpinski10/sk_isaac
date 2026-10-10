@@ -54,7 +54,7 @@ _FRANKA_STACK_IK_REL_INIT_JOINT_POS: dict[str, float] = {
     "panda_finger_joint.*": 0.0400,
 }
 
-
+_VEL = 1.5
 
 @configclass
 class StackSceneCfg(InteractiveSceneCfg):
@@ -419,3 +419,6 @@ class StackEnvCfg(ManagerBasedRLEnvCfg):
             gpu_total_aggregate_pairs_capacity=16 * 1024,
             friction_correlation_distance=0.00625,
         )
+
+        for name in ("panda_shoulder","panda_forearm"):
+            self.scene.robot.actuators[name].velocity_limit_sim=_VEL
