@@ -171,7 +171,7 @@ def release_cube(
     xy_threshold: float = 0.02,
     height_diff: float = 0.05,
     height_tolerance: float = 0.01,
-    grip_width: float = 0.025,
+    grip_width: float = 0.037,
     cube_2_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
     cube_3_cfg: SceneEntityCfg = SceneEntityCfg("cube_3"),
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
@@ -181,22 +181,44 @@ def release_cube(
     cube_3: RigidObject = env.scene[cube_3_cfg.name]
     finger_ids, _ = robot.find_joints(env.cfg.gripper_joint_names)
 
-    cube_2_pos = cube_2.data.root_pos_w.torch
-    cube_3_pos = cube_3.data.root_pos_w.torch
-    cubes_diff = cube_3_pos - cube_2_pos
+    cubes_diff = cube_3.data.root_pos_w.torch - cube_2.data.root_pos_w.torch
 
     xy_dist = torch.linalg.norm(cubes_diff[:, [0, 1]], dim=1)
-    height_error = torch.abs(cubes_diff[:, 2] - height_diff)
-    cubes_aligned = (xy_dist < xy_threshold) & (height_error < height_tolerance)
+    height_error = cubes_diff[:, 2] - height_diff
+    dist = torch.sqrt(xy_dist**2 + height_error**2)
+    near = 1.0 - torch.tanh(dist / 0.02)
 
-    
-    finger_pos = robot.data.joint_pos.torch[:, finger_ids]
-    fully_open_gripper = (finger_pos > env.cfg.gripper_open_val - 0.005).all(dim=1)
-    return cubes_aligned.float() * fully_open_gripper 
+    finger_pos = robot.data.joint_pos.torch[:, finger_ids].mean(dim=1)
+    open_amount = torch.clamp((finger_pos - grip_width) / (env.cfg.gripper_open_val - grip_width), 0.0, 1.0)
+
+    grip_action = env.action_manager.action[:, 7]
+    open_intent = torch.sigmoid(3.0 * grip_action)
+    return near * (0.7 * open_amount + 0.3 * open_intent)
+
+
+def home_return(
+    env: ManagerBasedRLEnv,
+    std: float = 1.0,
+    xy_threshold: float = 0.02,
+    height_diff: float = 0.05,
+    atol: float = 0.005,
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    robot: Articulation = env.scene[robot_cfg.name]
+    arm_ids, _ = robot.find_joints(["panda_joint.*"])
+    joints_q = robot.data.joint_pos.torch[:, arm_ids]
+    joints_q_home = robot.data.default_joint_pos.torch[:, arm_ids]
+    err = torch.linalg.norm(joints_q - joints_q_home, dim=1)
+    stacked = cubes_stacked(
+        env, xy_threshold=xy_threshold, height_diff=height_diff, atol=atol, rtol=0.0
+    )
+    return stacked.float() * (1 - torch.tanh(err / std))
 
 
 def arm_action_l2(env) -> torch.Tensor:
-    return torch.sum(torch.square(env.action_manager.action[:, :7]), dim=1)
+    return torch.sum(torch.square(env.action_manager.action[:, :8]), dim=1)
+
+
 
 
 

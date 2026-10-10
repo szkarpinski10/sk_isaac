@@ -44,16 +44,17 @@ from isaaclab_assets.robots.franka import FRANKA_PANDA_CFG  # isort: skip
 
 
 _FRANKA_STACK_IK_REL_INIT_JOINT_POS: dict[str, float] = {
-    "panda_joint1": 0.0444,
-    "panda_joint2": -0.1894,
-    "panda_joint3": -0.1107,
-    "panda_joint4": -2.5148,
-    "panda_joint5": 0.0044,
-    "panda_joint6": 2.3775,
-    "panda_joint7": 0.6952,
+    "panda_joint1": 0.0,
+    "panda_joint2": -0.3,
+    "panda_joint3": 0.0,
+    "panda_joint4": -2.0,
+    "panda_joint5": 0.0,
+    "panda_joint6": 1.7,
+    "panda_joint7": 0.785,
     "panda_finger_joint.*": 0.0400,
 }
 
+_VEL = 1.5 
 
 
 @configclass
@@ -82,6 +83,8 @@ class StackSceneCfg(InteractiveSceneCfg):
             pos = [0.0,0.0,0.0],
         ),
     )
+
+
 
     # lights
     light = AssetBaseCfg(
@@ -267,7 +270,7 @@ class EventCfg:
         mode="reset",
         params={
             "mean": 0.0,
-            "std": 0.05,
+            "std": 0.1,
             "asset_cfg": SceneEntityCfg("robot"),
         },
     )
@@ -286,7 +289,8 @@ class EventCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
-    reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.1, "object_cfg": SceneEntityCfg("cube_3")}, weight=1.0)
+    reaching_object_fine_grained = RewTerm(func=mdp.object_ee_distance, params={"std": 0.1, "object_cfg": SceneEntityCfg("cube_3")}, weight=1.0)
+    reaching_object = RewTerm(func = mdp.object_ee_distance, params={"std": 0.4, "object_cfg": SceneEntityCfg("cube_3")}, weight=1.0)
     lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.04, "object_cfg":SceneEntityCfg("cube_3")}, weight=3.0)
 
     # naprowadzanie cube 2
@@ -309,6 +313,9 @@ class RewardsCfg:
     )
 
     release = RewTerm(func=mdp.release_cube, params={}, weight=30.0)
+
+    home_return_fine_grained = RewTerm(func=mdp.home_return, params={"std": 1.0}, weight=30)
+    home_return = RewTerm(func=mdp.home_return, params={"std": 3.0}, weight=10)
 
 
     # penalty
@@ -408,7 +415,7 @@ class StackEnvCfg(ManagerBasedRLEnvCfg):
 
         # general settings
         self.decimation = 2
-        self.episode_length_s = 10
+        self.episode_length_s = 12
         
         # visualizer camera settings
         self.sim.default_visualizer_cfg = VisualizerCfg(eye=(8.0, 0.0, 5.0))
@@ -422,3 +429,6 @@ class StackEnvCfg(ManagerBasedRLEnvCfg):
             gpu_total_aggregate_pairs_capacity=16 * 1024,
             friction_correlation_distance=0.00625,
         )
+
+        for name in ("panda_shoulder","panda_forearm"):
+            self.scene.robot.actuators[name].velocity_limit_sim=_VEL
