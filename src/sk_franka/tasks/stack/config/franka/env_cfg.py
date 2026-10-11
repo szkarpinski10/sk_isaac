@@ -273,10 +273,10 @@ class EventCfg:
     )
 
     randomize_cube_positions = EventTerm(
-        func=mdp.randomize_object_pose,
+        func=mdp.randomize_object_pose_all_possibilities,
         mode="reset",
         params={
-            "pose_range": {"x": (0.4, 0.6), "y": (-0.10, 0.10), "z": (0.025, 0.025), "yaw": (-1.0, 1.0)},
+            "pose_range": {"x": (0.4, 0.6), "y": (-0.10, 0.10), "z": (0.025, 0.025), "yaw": (-math.pi, math.pi)},
             "min_separation": 0.1,
             "asset_cfgs": [SceneEntityCfg("cube_1"), SceneEntityCfg("cube_2"), SceneEntityCfg("cube_3")],
         },
