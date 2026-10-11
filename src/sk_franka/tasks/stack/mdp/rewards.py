@@ -196,8 +196,8 @@ def release_cube(
 
 
     grip_action = env.action_manager.action[:, 7]
-    open_intent = torch.sigmoid(3.0 * grip_action)
-    return near * (0.7 * open_amount + 0.3 * open_intent)
+    open_gripper_action = torch.sigmoid(3.0 * grip_action)
+    return near * (0.7 * open_amount + 0.3 * open_gripper_action)
 
 
 def home_return(
