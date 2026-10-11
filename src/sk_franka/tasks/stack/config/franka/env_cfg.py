@@ -279,7 +279,7 @@ class EventCfg:
         func=mdp.rand_tower_pos_and_cube_3,
         mode="reset",
         params={
-            "pose_range": {"x": (0.4, 0.6), "y": (-0.10, 0.10), "z": (0.025, 0.025), "yaw": (-1.0, 1.0)},
+            "pose_range": {"x": (0.4, 0.6), "y": (-0.10, 0.10), "z": (0.025, 0.025), "yaw": (-math.pi,math.pi )},
             "min_separation": 0.12,
         },
     )

@@ -164,6 +164,14 @@ def rand_tower_pos_and_cube_3(
         )
     
         cube_1_pose = pose_list[0]
+        cube_1_pose = [
+            cube_1_pose[0],
+            cube_1_pose[1],
+            cube_1_pose[2],
+            random.randint(0,3) * math.pi/2,
+            random.randint(0,3) * math.pi/2,
+            cube_1_pose[5],
+            ]
         cube_2_pose = [
             cube_1_pose[0] + random.uniform(-xy_rand,xy_rand),
             cube_1_pose[1] + random.uniform(-xy_rand,xy_rand),
@@ -172,7 +180,17 @@ def rand_tower_pos_and_cube_3(
             random.randint(0,3) * math.pi/2,
             cube_1_pose[5] + random.uniform(-yaw_rand,yaw_rand),
             ]
+
+
         cube_3_pose = pose_list[1]
+        cube_3_pose = [
+            cube_3_pose[0],
+            cube_3_pose[1],
+            cube_3_pose[2],
+            random.randint(0,3) * math.pi/2,
+            random.randint(0,3) * math.pi/2,
+            cube_3_pose[5],
+            ]
 
         for cfg, pose in ((cube_1_cfg,cube_1_pose,),(cube_2_cfg,cube_2_pose),(cube_3_cfg,cube_3_pose)):
             asset = env.scene[cfg.name]
