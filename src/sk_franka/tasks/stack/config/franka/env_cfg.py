@@ -190,24 +190,27 @@ class RewardsCfg:
         weight=-0.2,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=["panda_hand"]), "command_name": "ee_pose"},
     )
+
+    end_effector_position_tracking_fine_grained = RewTerm(
+        func=mdp.position_command_error_tanh,
+        weight=0.1,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=["panda_hand"]),
+            "std": 0.1,
+            "command_name": "ee_pose",
+        },
+    )
+
     end_effector_orientation_tracking = RewTerm(
         func=mdp.orientation_command_error,
         weight=-0.1,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=["panda_hand"]), "command_name": "ee_pose"},
     )
-
-    ee_tracking= RewTerm(
-        func=mdp.position_command_error_tanh,
-        params = {
-            "asset_cfg":SceneEntityCfg("robot",body_names = ["panda_hand"]), "std": 0.1, "command_name":"ee_pose", 
-            
-        },
-        weight = 0.1,
-    )
+    
 
     # control and physical motion penalties
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
-    action_magnitude = RewTerm(func=mdp.action_l2, weight=-0.005)
+    
     joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
         weight=-0.0001,
@@ -229,9 +232,9 @@ class CommandsCfg:
             pos_x=(0.35, 0.65),
             pos_y=(-0.2, 0.2),
             pos_z=(0.15, 0.5),
-            roll=(0.0, 0.0),
-            pitch=(math.pi,math.pi),  
-            yaw=(-3.14, 3.14),
+            roll=(0.0,0.0),
+            pitch=(math.pi , math.pi ),
+            yaw=(-math.pi / 4, math.pi / 4),
         ),
     )
 
@@ -252,8 +255,6 @@ class TerminationsCfg:
     # (1) Time out
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
 
-    
-    
 
 ##
 # Environment configuration
@@ -287,7 +288,7 @@ class StackEnvCfg(ManagerBasedRLEnvCfg):
         # general settings
         self.decimation = 4
         self.sim.render_interval = self.decimation
-        self.episode_length_s = 12.0
+        self.episode_length_s = 12
         self.sim.default_visualizer_cfg = VisualizerCfg(eye=(3.5, 3.5, 3.5))
         # simulation settings
         self.sim.dt = 1.0 / 120.0
