@@ -149,6 +149,7 @@ def rand_tower_pos_and_cube_3(
     stack_gap : float = 0.001,
     xy_rand: float = 0.01,
     yaw_rand: float = math.pi,
+    
 
 ): 
     if env_ids is None:
@@ -163,6 +164,14 @@ def rand_tower_pos_and_cube_3(
         )
     
         cube_1_pose = pose_list[0]
+        cube_1_pose = [
+            cube_1_pose[0],
+            cube_1_pose[1],
+            cube_1_pose[2],
+            random.randint(0,3) * math.pi/2,
+            random.randint(0,3) * math.pi/2,
+            cube_1_pose[5],
+            ]
         cube_2_pose = [
             cube_1_pose[0] + random.uniform(-xy_rand,xy_rand),
             cube_1_pose[1] + random.uniform(-xy_rand,xy_rand),
@@ -171,11 +180,61 @@ def rand_tower_pos_and_cube_3(
             random.randint(0,3) * math.pi/2,
             cube_1_pose[5] + random.uniform(-yaw_rand,yaw_rand),
             ]
+
+
         cube_3_pose = pose_list[1]
+        cube_3_pose = [
+            cube_3_pose[0],
+            cube_3_pose[1],
+            cube_3_pose[2],
+            random.randint(0,3) * math.pi/2,
+            random.randint(0,3) * math.pi/2,
+            cube_3_pose[5],
+            ]
 
         for cfg, pose in ((cube_1_cfg,cube_1_pose,),(cube_2_cfg,cube_2_pose),(cube_3_cfg,cube_3_pose)):
             asset = env.scene[cfg.name]
             pose_tensor = torch.tensor([pose], device=env.device)
+            positions = pose_tensor[:, 0:3] + env.scene.env_origins[cur_env, 0:3]
+            orientations = math_utils.quat_from_euler_xyz(pose_tensor[:, 3], pose_tensor[:, 4], pose_tensor[:, 5])
+            asset.write_root_pose_to_sim_index(
+                root_pose=torch.cat([positions, orientations], dim=-1),
+                env_ids=torch.tensor([cur_env], device=env.device),
+            )
+            asset.write_root_velocity_to_sim_index(
+                root_velocity=torch.zeros(1, 6, device=env.device), env_ids=torch.tensor([cur_env], device=env.device)
+            )
+
+def randomize_object_pose_all_possibilities(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor,
+    asset_cfgs: list[SceneEntityCfg],
+    min_separation: float = 0.0,
+    pose_range: dict[str, tuple[float, float]] = {},
+    max_sample_tries: int = 5000,
+):
+    if env_ids is None:
+        return
+
+    # Randomize poses in each environment independently
+    for cur_env in env_ids.tolist():
+        pose_list = sample_object_poses(
+            num_objects=len(asset_cfgs),
+            min_separation=min_separation,
+            pose_range=pose_range,
+            max_sample_tries=max_sample_tries,
+        )
+
+        # Randomize pose for each object
+        for i in range(len(asset_cfgs)):
+            asset_cfg = asset_cfgs[i]
+            asset = env.scene[asset_cfg.name]
+
+            pose_list[i][3] = random.randint(0,3) * math.pi/2
+            pose_list[i][4] = random.randint(0,3) * math.pi/2
+
+            # Write pose to simulation
+            pose_tensor = torch.tensor([pose_list[i]], device=env.device)
             positions = pose_tensor[:, 0:3] + env.scene.env_origins[cur_env, 0:3]
             orientations = math_utils.quat_from_euler_xyz(pose_tensor[:, 3], pose_tensor[:, 4], pose_tensor[:, 5])
             asset.write_root_pose_to_sim_index(

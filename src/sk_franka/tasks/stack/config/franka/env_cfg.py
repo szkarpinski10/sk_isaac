@@ -429,13 +429,13 @@ class StackEnvCfg(ManagerBasedRLEnvCfg):
 class MergeCfg(StackEnvCfg):
     def __post_init__(self)->None:
         super().__post_init__()
-        self.episode_length_s = 25
+        self.episode_length_s = 15
         self.events.randomize_cube_positions = EventTerm(
-            func = mdp.randomize_object_pose,
+            func = mdp.randomize_object_pose_all_possibilities,
             mode = "reset",
             params = {
                 "asset_cfgs":[SceneEntityCfg("cube_1"), SceneEntityCfg("cube_2"), SceneEntityCfg("cube_3")],
-                "pose_range": {"x": (0.4, 0.6), "y": (-0.10, 0.10), "z": (0.025, 0.025), "yaw": (-1.0, 1.0)},
+                "pose_range": {"x": (0.4, 0.6), "y": (-0.10, 0.10), "z": (0.025, 0.025), "yaw": (-math.pi, math.pi)},
                 "min_separation": 0.13,
             },
         )

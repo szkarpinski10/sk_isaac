@@ -200,7 +200,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                 base,
                 env_ids,
                 min_separation=0.12,
-                pose_range={"x": (0.4, 0.6), "y": (-0.10, 0.10), "z": (0.025, 0.025), "yaw": (-1.0, 1.0)},
+                pose_range={"x": (0.4, 0.6), "y": (-0.10, 0.10), "z": (0.025, 0.025), "yaw": (-math.pi, math.pi)},
                 yaw_rand=args_cli.p2_yaw_rand,
             )
  
@@ -490,3 +490,4 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
  
 if __name__ == "__main__":
     main()
+ 
