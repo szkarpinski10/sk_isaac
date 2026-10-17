@@ -94,6 +94,7 @@ parser.add_argument("--external_callback", default=None, help="Fully qualified p
 # checkpoint 1 and checkpoint 2
 parser.add_argument("--checkpoint_1", type=str, required = True)
 parser.add_argument("--checkpoint_2", type=str, required = True)
+parser.add_argument("--episodes", type=int, default = None,) 
 
 
 cli_args.add_rsl_rl_args(parser)
@@ -118,6 +119,9 @@ remaining_args = list_intersection(remaining_args, remaining_args_env_registrati
 sys.argv = [sys.argv[0]] + remaining_args
 
 installed_version = metadata.version("rsl-rl-lib")
+
+# P1 - cube 2 na cube 1, P2 - cube 3 na cube 2, RELEASE 
+P1, P2, RELEASE = 0, 1, 2
 
 
 #### load policy =============================================================
@@ -152,6 +156,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             # note: certain randomizations occur in the environment initialization so we set the seed here
             env_cfg.seed = agent_cfg.seed
             env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
+            env_cfg.episode_length_s = 30.0  
             
 
             # przekazanie checkpointow
@@ -190,20 +195,112 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             robot = base.scene["robot"]  
             cube_1= base.scene["cube_1"]  
             cube_2= base.scene["cube_2"]  
-            cube_3= base.scene["cube_3"]  
+            cube_3= base.scene["cube_3"]
+            arm_ids, _ = robot.find_joints(["panda_joint.*"])
+            arm_scale = base.cfg.actions.arm_action.scale
 
+            
+            from sk_franka.tasks.stack.mdp.terminations import cubes_stacked
+
+            
+            phase = torch.zeros(num_envs, dtype=torch.long, device=device)  #aktualna faza 
+            cube_2_on_cube_1_steps = torch.zeros(num_envs, dtype=torch.long, device=device)  # ile krokow cube_2 stoi nieruchomo na cube_1
+            tower_collapse_cnt= torch.zeros(num_envs, dtype=torch.long, device=device)  # ile korkow wieza zburzona
+            release_cnt = torch.zeros(num_envs, dtype=torch.long, device=device)  # ile krokow klocke jest puszczany 
+            P1_comeback_cnt= torch.zeros(num_envs, dtype=torch.long, device=device)  # powroty do P1
+            position_hold = torch.zeros(num_envs, len(arm_ids), device=device)  # pozycja ramienia trzymana podczas puszczania klocka
+            success_cnt = torch.zeros(num_envs, dtype=torch.long, device=device)  # ile krokow wieza z 3 kostek stoi nieruchomo
+            success = torch.zeros(num_envs, dtype=torch.bool, device=device)  # sukces w tym epizodzie 
+
+            finished = 0  # zakonczone epizody
+            n_success = 0
+            print("==================== OK ==================")
             screen.close()
             obs = env.get_observations()
             timestep = 0
-            print("[INFO] Policy playback is running, press Ctrl+C to exit...")
             try:
                 while True:
                     start_time = time.time()
                     with torch.inference_mode():
-                        actions = policy_1(obs)
+                        actions_1 = policy_1(obs)
+                        actions_2 = policy_2(obs)
+                        q_default = robot.data.default_joint_pos.torch[:, arm_ids]
+                        arm_action = (position_hold - q_default) / arm_scale
+                        gripper_open = torch.ones(num_envs, 1, device=device)
+                        release_action = torch.cat([arm_action, gripper_open], dim=-1)
+
+                        ph = phase.unsqueeze(-1)
+                        actions = torch.where(ph == P1, actions_1, torch.where(ph == P2, actions_2, release_action))
                         obs, _, dones, _ = env.step(actions)
                         # reset recurrent states for episodes that have terminated
                         reset_1(dones)
+                        reset_2(dones)
+                        dones = dones.bool()
+                        alive = ~dones
+
+                        cube_2_on_cube_1 = cubes_stacked(base, cube_3_cfg = None, xy_threshold = 0.02, height_diff = 0.05, atol = 0.005, rtol = 0.0)
+                        cube_2_speed = torch.linalg.norm(cube_2.data.root_lin_vel_w.torch, dim=1)
+
+                        cube_2_still = cube_2_on_cube_1 & (cube_2_speed < 0.02) & (phase == P1) & alive
+                        cube_2_on_cube_1_steps = torch.where(
+                            cube_2_still, cube_2_on_cube_1_steps + 1, torch.zeros_like(cube_2_on_cube_1_steps)
+                        )
+                        arm_err = torch.linalg.norm(robot.data.joint_pos.torch[:, arm_ids] - q_default, dim=1)
+                        switch = (phase == P1) & (cube_2_on_cube_1_steps >= 20) & (arm_err < 0.3) & alive
+                        if switch.any():
+                            phase = torch.where(switch, P2, phase)
+                            cube_2_on_cube_1_steps = torch.where(
+                                switch, torch.zeros_like(cube_2_on_cube_1_steps), cube_2_on_cube_1_steps
+                            )
+
+                        c2_c1_dist = cube_2.data.root_pos_w.torch - cube_1.data.root_pos_w.torch
+                        tower_ok = (torch.linalg.norm(c2_c1_dist[:, :2], dim=1) < 0.04) & (
+                            (c2_c1_dist[:, 2] - 0.05).abs() < 0.02
+                        )
+                        tower_collapse_cnt = torch.where(
+                            (phase == P2) & alive & ~tower_ok, tower_collapse_cnt + 1, torch.zeros_like(tower_collapse_cnt)
+                        )
+                        collapse = (tower_collapse_cnt >= 10) & (P1_comeback_cnt < 2) & alive
+                        if collapse.any():
+                            position_hold[collapse] = robot.data.joint_pos.torch[:, arm_ids][collapse]
+                            phase = torch.where(collapse, RELEASE, phase)
+                            P1_comeback_cnt = torch.where(collapse, P1_comeback_cnt + 1, P1_comeback_cnt)
+                            tower_collapse_cnt = torch.where(
+                                collapse, torch.zeros_like(tower_collapse_cnt), tower_collapse_cnt
+                            )
+
+                        release_cnt = torch.where(
+                            (phase == RELEASE) & alive, release_cnt + 1, torch.zeros_like(release_cnt)
+                        )
+                        back = (phase == RELEASE) & (release_cnt >= 25) & alive
+                        if back.any():
+                            phase = torch.where(back, P1, phase)
+
+                        tower_3 = cubes_stacked(base, xy_threshold=0.02, height_diff=0.05, atol=0.005, rtol=0.0)
+                        cube_3_speed = torch.linalg.norm(cube_3.data.root_lin_vel_w.torch, dim=1)
+                        success_cnt = torch.where(
+                            tower_3 & (cube_3_speed < 0.02) & alive, success_cnt + 1, torch.zeros_like(success_cnt)
+                        )
+                        new_success = (success_cnt >= 10) & alive & ~success
+                        if new_success.any():
+                            success |= new_success
+
+                        if dones.any():
+                            finished += int(dones.sum().item())
+                            n_success += int(success[dones].sum().item())
+
+                        phase[dones] = P1
+                        cube_2_on_cube_1_steps[dones] =0
+                        tower_collapse_cnt[dones] = 0
+                        release_cnt[dones] = 0
+                        P1_comeback_cnt[dones] = 0
+                        success_cnt[dones] = 0
+                        success[dones] = False
+
+                    if args_cli.episodes is not None and finished >= args_cli.episodes:
+                        break
+
+
                     if args_cli.video:
                         timestep += 1
                         video_stop = args_cli.video_length
@@ -220,6 +317,12 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                 env.close()
             except KeyboardInterrupt:
                 pass
+
+            if finished > 0:
+                print("=" * 50)
+                print(f"Epizody: {finished}")
+                print(f"Sukces lacznie: {n_success}  ({100.0 * n_success / finished:.1f}%)")
+                print("=" * 50)
 
 
 if __name__ == "__main__":
