@@ -11,6 +11,7 @@ import importlib.metadata as metadata
 import os
 import sys
 import time
+import numpy as np
 
 import torch
 from packaging import version
@@ -58,6 +59,7 @@ from isaaclab_tasks.utils.hydra import hydra_task_config
 with contextlib.suppress(ImportError):
     import isaaclab_tasks_experimental  # noqa: F401
 
+from franka_.observations_combine import obs_combine
 # -- argparse ----------------------------------------------------------------
 parser = argparse.ArgumentParser(description="Play a checkpoint of an RL agent from RSL-RL.")
 parser.add_argument("--video", action="store_true", default=False, help="Record videos during play.")
@@ -198,6 +200,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             cube_3= base.scene["cube_3"]
             arm_ids, _ = robot.find_joints(["panda_joint.*"])
             arm_scale = base.cfg.actions.arm_action.scale
+            finger_ids, _ = robot.find_joints(["panda_finger_joint.*"])
+            ee_frame = base.scene["ee_frame"]
+            origin = base.scene.env_origins[0] #punkty srodowkisk 
 
             
             from sk_franka.tasks.stack.mdp.terminations import cubes_stacked
@@ -231,7 +236,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
                         ph = phase.unsqueeze(-1)
                         actions = torch.where(ph == P1, actions_1, torch.where(ph == P2, actions_2, release_action))
-                        obs, _, dones, _ = env.step(actions)
+                        obs,_, dones, _ = env.step(actions)
+
+                       
                         # reset recurrent states for episodes that have terminated
                         reset_1(dones)
                         reset_2(dones)
