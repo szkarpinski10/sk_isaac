@@ -36,7 +36,7 @@ from ... import mdp
 ##
 
 from isaaclab.markers.config import FRAME_MARKER_CFG  # isort: skip
-from isaaclab_assets.robots.franka import FRANKA_PANDA_CFG  # isort: skip
+from isaaclab_assets.robots.franka import FRANKA_PANDA_HIGH_PD_CFG  # isort: skip
 
 ##
 # Scene definition
@@ -54,7 +54,7 @@ _FRANKA_STACK_IK_REL_INIT_JOINT_POS: dict[str, float] = {
     "panda_finger_joint.*": 0.0400,
 }
 
-_VEL = 1.5
+_VEL = 0.8
 
 @configclass
 class StackSceneCfg(InteractiveSceneCfg):
@@ -74,9 +74,9 @@ class StackSceneCfg(InteractiveSceneCfg):
     )
 
     # robot
-    robot: ArticulationCfg = FRANKA_PANDA_CFG.replace(
+    robot: ArticulationCfg = FRANKA_PANDA_HIGH_PD_CFG.replace(
         prim_path = "{ENV_REGEX_NS}/Robot",
-        spawn=FRANKA_PANDA_CFG.spawn.replace(activate_contact_sensors=True),
+        spawn=FRANKA_PANDA_HIGH_PD_CFG.spawn.replace(activate_contact_sensors=True),
         init_state = ArticulationCfg.InitialStateCfg(
             joint_pos = _FRANKA_STACK_IK_REL_INIT_JOINT_POS,
             pos = [0.0,0.0,0.0],
@@ -405,7 +405,7 @@ class StackEnvCfg(ManagerBasedRLEnvCfg):
 
         # general settings
         self.decimation = 2
-        self.episode_length_s = 12
+        self.episode_length_s = 20
         
         # visualizer camera settings
         self.sim.default_visualizer_cfg = VisualizerCfg(eye=(8.0, 0.0, 5.0))
