@@ -22,6 +22,8 @@ if TYPE_CHECKING:
     from isaaclab.assets import Articulation, RigidObject
     from isaaclab.envs import ManagerBasedRLEnv
 
+import math
+import isaaclab.utils.math as math_utils
 
 def cubes_stacked(
     env: ManagerBasedRLEnv,
@@ -94,3 +96,31 @@ def cubes_stacked(
             raise ValueError("No gripper_joint_names found in environment config")
 
     return stacked
+
+
+def debug_print_obs(env: ManagerBasedRLEnv, env_ids):
+    """Wydruk do porównania z MuJoCo (tylko kroki 20-45)."""
+    step = env.common_step_counter
+    if step < 20 or step > 45:
+        return
+    origin = env.scene.env_origins[0].cpu().numpy()
+    a = env.action_manager.action[0].cpu().numpy()
+    finger = env.scene["robot"].data.joint_pos.torch[0, 7].item()
+    cube = env.scene["cube_2"].data.root_pos_w.torch[0].cpu().numpy() - origin
+    tcp = env.scene["ee_frame"].data.target_pos_w.torch[0, 0].cpu().numpy() - origin
+    print(f"[ISAAC {step}] grip_a={a[7]:6.2f}  palce={finger:.4f}  "
+        f"cube2={cube.round(3)}  tcp={tcp.round(3)}")
+
+    robot = env.scene["robot"]
+    hid = robot.find_bodies("panda_hand")[0][0]
+    qh = robot.data.body_quat_w.torch[0, hid].unsqueeze(0)
+    qc = env.scene["cube_2"].data.root_quat_w.torch[0].unsqueeze(0)
+    dev = qh.device
+    yh = math_utils.quat_apply(qh, torch.tensor([[0.0, 1.0, 0.0]], device=dev))[0]   # oś otwierania palców
+    xc = math_utils.quat_apply(qc, torch.tensor([[1.0, 0.0, 0.0]], device=dev))[0]   # ściana kostki
+    zc = math_utils.quat_apply(qc, torch.tensor([[0.0, 0.0, 1.0]], device=dev))[0]   # pion kostki
+    a_h = math.degrees(math.atan2(yh[1].item(), yh[0].item()))
+    a_c = math.degrees(math.atan2(xc[1].item(), xc[0].item()))
+    d = (a_h - a_c + 45) % 90 - 45
+    tilt = math.degrees(math.acos(max(-1.0, min(1.0, zc[2].item()))))
+    print(f"   yaw_roznica={d:6.1f}°  przechyl={tilt:5.1f}°")

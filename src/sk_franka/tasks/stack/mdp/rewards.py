@@ -14,6 +14,7 @@ import torch
 from isaaclab.managers import ManagerTermBase, RewardTermCfg, SceneEntityCfg
 from isaaclab.utils.math import combine_frame_transforms
 from .terminations import cubes_stacked
+import isaaclab.utils.math as math_utils
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject
@@ -260,5 +261,24 @@ class tower_knocked(ManagerTermBase):
 def arm_action_l2(env) -> torch.Tensor:
     return torch.sum(torch.square(env.action_manager.action[:, :8]), dim=1)
 
+
+
+def ee_cube_align(
+    env: ManagerBasedRLEnv,
+    std: float,
+    cube_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+) -> torch.Tensor:
+    cube_2: RigidObject = env.scene[cube_cfg.name]
+    ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
+
+    cube_2_pos = cube_2.data.root_pos_w.torch
+    ee_pos = ee_frame.data.target_pos_w.torch[:, 0, :]
+
+    xy_dist = torch.norm(cube_2_pos[:, :2] - ee_pos[:, :2], dim=1)
+    ee_close_cube = (ee_pos[:, 2] - cube_2_pos[:, 2]) < 0.10
+    on_table = cube_2_pos[:, 2] < 0.04
+
+    return (1 - torch.tanh(xy_dist / std)) * ee_close_cube.float() * on_table.float()
 
 

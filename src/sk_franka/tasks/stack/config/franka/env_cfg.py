@@ -54,7 +54,7 @@ _FRANKA_STACK_IK_REL_INIT_JOINT_POS: dict[str, float] = {
     "panda_finger_joint.*": 0.0400,
 }
 
-_VEL = 0.8
+_VEL = 1.5
 
 @configclass
 class StackSceneCfg(InteractiveSceneCfg):
@@ -93,11 +93,11 @@ class StackSceneCfg(InteractiveSceneCfg):
     cube_1 = RigidObjectCfg(
         prim_path = "{ENV_REGEX_NS}/Cube_1",
         init_state = RigidObjectCfg.InitialStateCfg(
-            pos = [0.50,0.15,0.025],
+            pos = [0.45,0.05,0.025],
         ),
         spawn=sim_utils.CuboidCfg(
             size=(0.05, 0.05, 0.05),
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.08),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.05),
                 rigid_props=PhysxRigidBodyCfg(      
                     solver_position_iteration_count=16,
                     solver_velocity_iteration_count=1,
@@ -121,11 +121,11 @@ class StackSceneCfg(InteractiveSceneCfg):
     cube_2 = RigidObjectCfg(
         prim_path = "{ENV_REGEX_NS}/Cube_2",
         init_state = RigidObjectCfg.InitialStateCfg(
-            pos = [0.55,0.20,0.025],
+            pos = [0.55,-0.05,0.025],
         ),
         spawn=sim_utils.CuboidCfg(
             size=(0.05, 0.05, 0.05),
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.08),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.05),
                 rigid_props=PhysxRigidBodyCfg(      
                     solver_position_iteration_count=16,
                     solver_velocity_iteration_count=1,
@@ -149,11 +149,11 @@ class StackSceneCfg(InteractiveSceneCfg):
     cube_3 = RigidObjectCfg(
         prim_path = "{ENV_REGEX_NS}/Cube_3",
         init_state = RigidObjectCfg.InitialStateCfg(
-            pos = [0.60,0.30,0.025],
+            pos = [0.42,-0.08,0.025],
         ),
         spawn=sim_utils.CuboidCfg(
             size=(0.05, 0.05, 0.05),
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.08),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.05),
                 rigid_props=PhysxRigidBodyCfg(      
                     solver_position_iteration_count=16,
                     solver_velocity_iteration_count=1,
@@ -211,14 +211,17 @@ class StackSceneCfg(InteractiveSceneCfg):
 class ActionsCfg:
     """Action specifications for the MDP."""
 
-    arm_action = mdp.JointPositionActionCfg(
-            asset_name="robot", joint_names=["panda_joint.*"], scale=0.5, use_default_offset=True
+    arm_action = mdp.RelativeJointPositionActionCfg(
+        asset_name="robot",
+        joint_names=["panda_joint.*"],
+        scale=0.1,              
+        use_zero_offset=True,
     )
-    gripper_action = mdp.BinaryJointPositionActionCfg(
-            asset_name="robot",
-            joint_names=["panda_finger.*"],
-            open_command_expr={"panda_finger_.*": 0.04},
-            close_command_expr={"panda_finger_.*": 0.0},
+    gripper_action = mdp.BinaryJointPositionActionCfg(   # BEZ ZMIAN
+        asset_name="robot",
+        joint_names=["panda_finger.*"],
+        open_command_expr={"panda_finger_.*": 0.04},
+        close_command_expr={"panda_finger_.*": 0.0},
     )
 
 
@@ -281,6 +284,48 @@ class EventCfg:
             "asset_cfgs": [SceneEntityCfg("cube_1"), SceneEntityCfg("cube_2"), SceneEntityCfg("cube_3")],
         },
     )
+    randomize_cube_friction = EventTerm(
+        func=mdp.randomize_rigid_body_material,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("cube_2"),
+            "static_friction_range": (0.3, 0.8),
+            "dynamic_friction_range": (0.25, 0.7),
+            "restitution_range": (0.0, 0.0),
+            "num_buckets": 64,
+        },
+    )
+
+    
+    randomize_cube_mass = EventTerm(
+        func=mdp.randomize_rigid_body_mass,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("cube_2"),
+            "mass_distribution_params": (0.03, 0.07),
+            "operation": "abs",
+        },
+    )
+
+    randomize_robot_PD = EventTerm(
+        func=mdp.randomize_actuator_gains,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=["panda_joint.*"]),
+            "stiffness_distribution_params": (0.75, 5.0),
+            "damping_distribution_params": (0.75, 2.5),
+            "operation": "scale",
+            "distribution": "log_uniform",
+        }
+    )
+
+    # debug_obs = EventTerm(
+    #     func=mdp.debug_print_obs,
+    #     mode="interval",
+    #     interval_range_s=(0.02, 0.02),
+    #     is_global_time=True,
+    # )
+    
 
 
 @configclass
@@ -314,7 +359,8 @@ class RewardsCfg:
 
     home_return_fine_grained = RewTerm(func = mdp.home_return, params = {"std":1.0}, weight = 30)
     home_return = RewTerm(func = mdp.home_return, params = {"std":3.0}, weight = 10)
-
+    #xy_align = RewTerm(func=mdp.ee_cube_align, params={"std": 0.02}, weight=2.0)
+    
     # action penalty
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
 
@@ -330,7 +376,7 @@ class RewardsCfg:
         weight = -300.0,
     )
 
-    arm_action_l2 = RewTerm(func=mdp.arm_action_l2, weight=-0.05)
+    arm_action_l2 = RewTerm(func=mdp.arm_action_l2, weight=0.0)
 
 
 @configclass
@@ -345,6 +391,10 @@ class CurriculumCfg:
 
     joint_vel = CurrTerm(
         func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -1e-1, "num_steps": 10000}
+    )
+
+    arm_action_l2=CurrTerm(
+        func=mdp.modify_reward_weight, params={"term_name": "arm_action_l2", "weight": -0.05, "num_steps": 10000}
     )
 
     
@@ -373,6 +423,9 @@ class TerminationsCfg:
     tower_knocked = DoneTerm(
         func = mdp.tower_knocked
     )
+
+
+
 
 ##
 # Environment configuration
@@ -422,3 +475,4 @@ class StackEnvCfg(ManagerBasedRLEnvCfg):
 
         for name in ("panda_shoulder","panda_forearm"):
             self.scene.robot.actuators[name].velocity_limit_sim=_VEL
+        self.scene.robot.actuators["panda_hand"].velocity_limit_sim = 0.1

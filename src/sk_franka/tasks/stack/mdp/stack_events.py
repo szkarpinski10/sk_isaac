@@ -176,3 +176,5 @@ def randomize_object_pose_all_possibilities(
             asset.write_root_velocity_to_sim_index(
                 root_velocity=torch.zeros(1, 6, device=env.device), env_ids=torch.tensor([cur_env], device=env.device)
             )
+
+
