@@ -319,13 +319,6 @@ class EventCfg:
         }
     )
 
-    # debug_obs = EventTerm(
-    #     func=mdp.debug_print_obs,
-    #     mode="interval",
-    #     interval_range_s=(0.02, 0.02),
-    #     is_global_time=True,
-    # )
-    
 
 
 @configclass
@@ -359,7 +352,6 @@ class RewardsCfg:
 
     home_return_fine_grained = RewTerm(func = mdp.home_return, params = {"std":1.0}, weight = 30)
     home_return = RewTerm(func = mdp.home_return, params = {"std":3.0}, weight = 10)
-    #xy_align = RewTerm(func=mdp.ee_cube_align, params={"std": 0.02}, weight=2.0)
     
     # action penalty
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
