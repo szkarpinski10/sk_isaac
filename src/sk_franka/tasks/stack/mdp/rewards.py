@@ -202,25 +202,33 @@ def release_cube(
 
 
 def home_return(
-    env:ManagerBasedRLEnv,
-    std:float = 1.0,
-    xy_threshold :float = 0.02,
-    height_diff:float = 0.05,
-    atol:float = 0.005,
+    env: ManagerBasedRLEnv,
+    std: float = 1.0,
+    xy_threshold: float = 0.02,
+    height_diff: float = 0.05,
+    atol: float = 0.005,
+    clear_height: float = 0.08,
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-) ->torch.Tensor:
+    cube_2_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+) -> torch.Tensor:
     robot: Articulation = env.scene[robot_cfg.name]
     arm_ids, _ = robot.find_joints(["panda_joint.*"])
     joints_q = robot.data.joint_pos.torch[:, arm_ids]
-    joints_q_home = robot.data.default_joint_pos.torch[:,arm_ids]
-    err = torch.linalg.norm(joints_q - joints_q_home,dim = 1)
+    joints_q_home = robot.data.default_joint_pos.torch[:, arm_ids]
+    err = torch.linalg.norm(joints_q - joints_q_home, dim=1)
+
     stacked = cubes_stacked(
-        env,cube_3_cfg = None, xy_threshold = xy_threshold, height_diff= height_diff, atol = atol, rtol = 0.0
+        env, cube_3_cfg=None, xy_threshold=xy_threshold, height_diff=height_diff, atol=atol, rtol=0.0
     )
 
-    
+    cube_2: RigidObject = env.scene[cube_2_cfg.name]
+    ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
+    ee_z = ee_frame.data.target_pos_w.torch[:, 0, 2]
+    c2_z = cube_2.data.root_pos_w.torch[:, 2]
+    clear = torch.clamp((ee_z - c2_z) / clear_height, 0.0, 1.0)
 
-    return stacked.float() * (1 - torch.tanh(err/std))
+    return stacked.float() * clear * (1 - torch.tanh(err / std))
 
 class tower_knocked(ManagerTermBase):
 
@@ -282,3 +290,99 @@ def ee_cube_align(
     return (1 - torch.tanh(xy_dist / std)) * ee_close_cube.float() * on_table.float()
 
 
+
+def grasp_height(
+    env: ManagerBasedRLEnv,
+    std: float = 0.01,
+    xy_threshold: float = 0.02,
+    cube_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+) -> torch.Tensor:
+
+    cube: RigidObject = env.scene[cube_cfg.name]
+    ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
+    cube_pos = cube.data.root_pos_w.torch
+    ee_pos = ee_frame.data.target_pos_w.torch[:, 0, :]
+
+    dz = ee_pos[:, 2] - cube_pos[:, 2]
+    dxy = torch.linalg.norm(ee_pos[:, :2] - cube_pos[:, :2], dim=1)
+    near = (dxy < xy_threshold) & (cube_pos[:, 2] < 0.04) & (dz < 0.08) & (dz > -0.03)
+    h = torch.exp(-torch.square(dz / std))
+    closing = env.action_manager.action[:, 7] < 0          
+
+    r = torch.where(closing, 2.0 * h - 1.0, 0.5 * h)
+    return near.float() * r
+
+def place_height(
+    env: ManagerBasedRLEnv,
+    std: float = 0.01,
+    height_diff: float = 0.05,
+    xy_threshold: float = 0.03,
+    release_bonus: float = 10.0,
+    cube_1_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
+    cube_2_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+) -> torch.Tensor:
+
+    cube_1: RigidObject = env.scene[cube_1_cfg.name]
+    cube_2: RigidObject = env.scene[cube_2_cfg.name]
+    ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
+ 
+    c1 = cube_1.data.root_pos_w.torch
+    c2 = cube_2.data.root_pos_w.torch
+    ee = ee_frame.data.target_pos_w.torch[:, 0, :]
+ 
+    diff = c2 - c1
+    xy = torch.linalg.norm(diff[:, :2], dim=1)
+    herr = diff[:, 2] - height_diff
+    ee_near = torch.linalg.norm(ee - c2, dim=1) < 0.03
+ 
+    gate = (xy < xy_threshold) & (herr > -0.01) & (herr < 0.08) & ee_near & (c2[:, 2] > 0.04)
+ 
+    h = torch.exp(-torch.square(herr / std))
+    act = env.action_manager.action[:, 7]
+    prev = env.action_manager.prev_action[:, 7]
+    holding = act < 0                                  # BinaryJointPositionAction: < 0 = zamknij
+    release_moment = (prev < 0) & (act >= 0)           # dokładnie ten krok, w którym puszcza
+ 
+    r = torch.zeros_like(h)
+    r = torch.where(holding, 0.5 * h, r)
+    r = torch.where(release_moment, release_bonus * (2.0 * h - 1.0), r)
+    return gate.float() * r
+
+def _cube_horizontal_axis_yaw(R: torch.Tensor) -> torch.Tensor:
+    """Kąt [rad] poziomej osi kostki (patrząc z góry). R: (N,3,3), kolumny = osie kostki w świecie.
+    Działa dla każdej z 24 orientacji kostki (także 'leżącej na boku'): bierzemy oś, która NIE jest pionowa."""
+    up_idx = R[:, 2, :].abs().argmax(dim=1)                                    # oś najbardziej pionowa
+    idx_h = torch.where(up_idx == 0, torch.ones_like(up_idx), torch.zeros_like(up_idx))
+    ax = R[torch.arange(R.shape[0], device=R.device), :, idx_h]                 # jedna z osi poziomych
+    return torch.atan2(ax[:, 1], ax[:, 0])
+ 
+ 
+def grasp_yaw_align(
+    env: ManagerBasedRLEnv,
+    xy_threshold: float = 0.05,
+    cube_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+) -> torch.Tensor:
+
+    cube: RigidObject = env.scene[cube_cfg.name]
+    ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
+ 
+    cube_pos = cube.data.root_pos_w.torch
+    ee_pos = ee_frame.data.target_pos_w.torch[:, 0, :]
+ 
+    dz = ee_pos[:, 2] - cube_pos[:, 2]
+    dxy = torch.linalg.norm(ee_pos[:, :2] - cube_pos[:, :2], dim=1)
+    gate = (dxy < xy_threshold) & (dz < 0.10) & (dz > -0.03) & (cube_pos[:, 2] < 0.04)
+ 
+    R_hand = math_utils.matrix_from_quat(ee_frame.data.target_quat_w.torch[:, 0, :])
+    R_cube = math_utils.matrix_from_quat(cube.data.root_quat_w.torch)
+ 
+    hand_yaw = torch.atan2(R_hand[:, 1, 1], R_hand[:, 0, 1])                    # oś y dłoni = palce
+    cube_yaw = _cube_horizontal_axis_yaw(R_cube)
+    score = torch.square(torch.cos(2.0 * (hand_yaw - cube_yaw)))                # cos^2(2x) ma okres 90°
+ 
+    down = torch.clamp(-R_hand[:, 2, 2], 0.0, 1.0) ** 4                         # oś z dłoni w dół -> 1
+ 
+    return gate.float() * down * score

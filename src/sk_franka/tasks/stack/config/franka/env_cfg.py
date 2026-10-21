@@ -354,6 +354,9 @@ class RewardsCfg:
     home_return = RewTerm(func = mdp.home_return, params = {"std":3.0}, weight = 10)
     
     xy_align = RewTerm(func=mdp.ee_cube_align, params={"std": 0.02}, weight=2.0)
+    grasp_height = RewTerm(func=mdp.grasp_height, params={"std": 0.01}, weight=2.0)
+    place_height = RewTerm(func=mdp.place_height, params={"std": 0.01}, weight=2.0)
+    grasp_yaw_align = RewTerm(func=mdp.grasp_yaw_align, weight=1.0)
     # action penalty
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
 
