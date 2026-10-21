@@ -342,8 +342,8 @@ def place_height(
     h = torch.exp(-torch.square(herr / std))
     act = env.action_manager.action[:, 7]
     prev = env.action_manager.prev_action[:, 7]
-    holding = act < 0                                  # BinaryJointPositionAction: < 0 = zamknij
-    release_moment = (prev < 0) & (act >= 0)           # dokładnie ten krok, w którym puszcza
+    holding = act < 0                                  
+    release_moment = (prev < 0) & (act >= 0)           
  
     r = torch.zeros_like(h)
     r = torch.where(holding, 0.5 * h, r)
@@ -351,14 +351,11 @@ def place_height(
     return gate.float() * r
 
 def _cube_horizontal_axis_yaw(R: torch.Tensor) -> torch.Tensor:
-    """Kąt [rad] poziomej osi kostki (patrząc z góry). R: (N,3,3), kolumny = osie kostki w świecie.
-    Działa dla każdej z 24 orientacji kostki (także 'leżącej na boku'): bierzemy oś, która NIE jest pionowa."""
-    up_idx = R[:, 2, :].abs().argmax(dim=1)                                    # oś najbardziej pionowa
+    up_idx = R[:, 2, :].abs().argmax(dim=1)                                    #
     idx_h = torch.where(up_idx == 0, torch.ones_like(up_idx), torch.zeros_like(up_idx))
-    ax = R[torch.arange(R.shape[0], device=R.device), :, idx_h]                 # jedna z osi poziomych
+    ax = R[torch.arange(R.shape[0], device=R.device), :, idx_h]                
     return torch.atan2(ax[:, 1], ax[:, 0])
- 
- 
+
 def grasp_yaw_align(
     env: ManagerBasedRLEnv,
     xy_threshold: float = 0.05,
@@ -379,10 +376,10 @@ def grasp_yaw_align(
     R_hand = math_utils.matrix_from_quat(ee_frame.data.target_quat_w.torch[:, 0, :])
     R_cube = math_utils.matrix_from_quat(cube.data.root_quat_w.torch)
  
-    hand_yaw = torch.atan2(R_hand[:, 1, 1], R_hand[:, 0, 1])                    # oś y dłoni = palce
+    hand_yaw = torch.atan2(R_hand[:, 1, 1], R_hand[:, 0, 1])                    
     cube_yaw = _cube_horizontal_axis_yaw(R_cube)
-    score = torch.square(torch.cos(2.0 * (hand_yaw - cube_yaw)))                # cos^2(2x) ma okres 90°
+    score = torch.square(torch.cos(2.0 * (hand_yaw - cube_yaw)))                
  
-    down = torch.clamp(-R_hand[:, 2, 2], 0.0, 1.0) ** 4                         # oś z dłoni w dół -> 1
+    down = torch.clamp(-R_hand[:, 2, 2], 0.0, 1.0) ** 4                         
  
     return gate.float() * down * score
