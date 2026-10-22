@@ -214,10 +214,10 @@ class ActionsCfg:
     arm_action = mdp.RelativeJointPositionActionCfg(
         asset_name="robot",
         joint_names=["panda_joint.*"],
-        scale=0.1,              
+        scale=0.03,              
         use_zero_offset=True,
     )
-    gripper_action = mdp.BinaryJointPositionActionCfg(   # BEZ ZMIAN
+    gripper_action = mdp.BinaryJointPositionActionCfg(   
         asset_name="robot",
         joint_names=["panda_finger.*"],
         open_command_expr={"panda_finger_.*": 0.04},
@@ -382,7 +382,7 @@ class CommandsCfg:
 @configclass
 class CurriculumCfg:
     action_rate = CurrTerm(
-        func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -1e-1, "num_steps": 10000}
+        func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -0.009, "num_steps": 10000}
     )
 
     joint_vel = CurrTerm(
@@ -390,7 +390,7 @@ class CurriculumCfg:
     )
 
     arm_action_l2=CurrTerm(
-        func=mdp.modify_reward_weight, params={"term_name": "arm_action_l2", "weight": -0.05, "num_steps": 10000}
+        func=mdp.modify_reward_weight, params={"term_name": "arm_action_l2", "weight": -0.0045, "num_steps": 10000}
     )
 
     

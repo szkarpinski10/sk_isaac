@@ -299,7 +299,6 @@ def grasp_height(
     cube_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
     ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
 ) -> torch.Tensor:
-
     cube: RigidObject = env.scene[cube_cfg.name]
     ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
  
@@ -313,8 +312,7 @@ def grasp_height(
     h = torch.exp(-torch.square(dz / std)) * torch.exp(-torch.square(dxy / xy_std))
     closing = env.action_manager.action[:, 7] < 0          # BinaryJointPositionAction: < 0 = zamknij
  
-    r = torch.where(closing, 2.0 * h - 1.0, 0.5 * h)
-    return near.float() * r
+    return (near & closing).float() * h
 
 class place_height(ManagerTermBase):
 
