@@ -293,62 +293,73 @@ def ee_cube_align(
 
 def grasp_height(
     env: ManagerBasedRLEnv,
-    std: float = 0.01,
-    xy_threshold: float = 0.02,
+    std: float = 0.03,
+    xy_std: float = 0.02,
+    xy_gate: float = 0.05,
     cube_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
     ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
 ) -> torch.Tensor:
 
     cube: RigidObject = env.scene[cube_cfg.name]
     ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
+ 
     cube_pos = cube.data.root_pos_w.torch
     ee_pos = ee_frame.data.target_pos_w.torch[:, 0, :]
-
+ 
     dz = ee_pos[:, 2] - cube_pos[:, 2]
     dxy = torch.linalg.norm(ee_pos[:, :2] - cube_pos[:, :2], dim=1)
-    near = (dxy < xy_threshold) & (cube_pos[:, 2] < 0.04) & (dz < 0.08) & (dz > -0.03)
-    h = torch.exp(-torch.square(dz / std))
-    closing = env.action_manager.action[:, 7] < 0          
-
+    near = (dxy < xy_gate) & (cube_pos[:, 2] < 0.04) & (dz < 0.08) & (dz > -0.03)
+ 
+    h = torch.exp(-torch.square(dz / std)) * torch.exp(-torch.square(dxy / xy_std))
+    closing = env.action_manager.action[:, 7] < 0          # BinaryJointPositionAction: < 0 = zamknij
+ 
     r = torch.where(closing, 2.0 * h - 1.0, 0.5 * h)
     return near.float() * r
 
-def place_height(
-    env: ManagerBasedRLEnv,
-    std: float = 0.01,
-    height_diff: float = 0.05,
-    xy_threshold: float = 0.03,
-    release_bonus: float = 10.0,
-    cube_1_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
-    cube_2_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
-    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
-) -> torch.Tensor:
+class place_height(ManagerTermBase):
 
-    cube_1: RigidObject = env.scene[cube_1_cfg.name]
-    cube_2: RigidObject = env.scene[cube_2_cfg.name]
-    ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
+    def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        robot = env.scene["robot"]
+        self._finger_ids, _ = robot.find_joints(env.cfg.gripper_joint_names)
+        self._prev_finger = torch.full((env.num_envs,), 0.04, device=env.device)
  
-    c1 = cube_1.data.root_pos_w.torch
-    c2 = cube_2.data.root_pos_w.torch
-    ee = ee_frame.data.target_pos_w.torch[:, 0, :]
+    def reset(self, env_ids=None):
+        if env_ids is None:
+            env_ids = slice(None)
+        self._prev_finger[env_ids] = 0.04          # na starcie epizodu chwytak jest otwarty
  
-    diff = c2 - c1
-    xy = torch.linalg.norm(diff[:, :2], dim=1)
-    herr = diff[:, 2] - height_diff
-    ee_near = torch.linalg.norm(ee - c2, dim=1) < 0.03
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        std: float = 0.03,
+        xy_std: float = 0.02,
+        height_diff: float = 0.05,
+        xy_gate: float = 0.08,
+        release_bonus: float = 10.0,
+        open_thr: float = 0.035,
+        cube_1_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
+        cube_2_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
+        ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+    ) -> torch.Tensor:
+        c1 = env.scene[cube_1_cfg.name].data.root_pos_w.torch
+        c2 = env.scene[cube_2_cfg.name].data.root_pos_w.torch
+        ee = env.scene[ee_frame_cfg.name].data.target_pos_w.torch[:, 0, :]
  
-    gate = (xy < xy_threshold) & (herr > -0.01) & (herr < 0.08) & ee_near & (c2[:, 2] > 0.04)
+        diff = c2 - c1
+        xy = torch.linalg.norm(diff[:, :2], dim=1)
+        herr = diff[:, 2] - height_diff
+        ee_near = torch.linalg.norm(ee - c2, dim=1) < 0.03            # kostka jeszcze przy chwytaku
  
-    h = torch.exp(-torch.square(herr / std))
-    act = env.action_manager.action[:, 7]
-    prev = env.action_manager.prev_action[:, 7]
-    holding = act < 0                                  
-    release_moment = (prev < 0) & (act >= 0)           
+        gate = (xy < xy_gate) & (herr > -0.01) & (herr < 0.10) & ee_near & (c2[:, 2] > 0.04)
  
-    r = torch.zeros_like(h)
-    r = torch.where(holding, 0.5 * h, r)
-    r = torch.where(release_moment, release_bonus * (2.0 * h - 1.0), r)
-    return gate.float() * r
+        finger = env.scene["robot"].data.joint_pos.torch[:, self._finger_ids].mean(dim=1)
+        opened_now = (self._prev_finger < open_thr) & (finger >= open_thr)   # palce właśnie przeszły przez 3.5 cm
+        self._prev_finger = finger.clone()
+ 
+        h = torch.exp(-torch.square(herr / std)) * torch.exp(-torch.square(xy / xy_std))
+        r = torch.where(gate & opened_now, release_bonus * (2.0 * h - 1.0), torch.zeros_like(h))
+        return r
 
 def _cube_horizontal_axis_yaw(R: torch.Tensor) -> torch.Tensor:
     up_idx = R[:, 2, :].abs().argmax(dim=1)                                    #

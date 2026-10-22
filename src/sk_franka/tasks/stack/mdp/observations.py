@@ -7,6 +7,7 @@ import warp as wp
 
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.math import subtract_frame_transforms
+import isaaclab.utils.math as math_utils
 
 if TYPE_CHECKING:
     from isaaclab.assets import RigidObject, Articulation
@@ -546,3 +547,25 @@ def ee_frame_pose_in_base_frame(
         return ee_quat_in_base
     else:
         return torch.cat((ee_pos_in_base, ee_quat_in_base), dim=1)
+
+def rel_yaw4(
+    env: ManagerBasedRLEnv,
+    cube_1_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
+    cube_2_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
+    cube_3_cfg: SceneEntityCfg = SceneEntityCfg("cube_3"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+) -> torch.Tensor:
+    ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
+    R_hand = math_utils.matrix_from_quat(ee_frame.data.target_quat_w.torch[:, 0, :])
+    hand_yaw = torch.atan2(R_hand[:, 1, 1], R_hand[:, 0, 1])        
+
+    out = []
+    for cfg in (cube_1_cfg, cube_2_cfg, cube_3_cfg):
+        R = math_utils.matrix_from_quat(env.scene[cfg.name].data.root_quat_w.torch)
+        up_idx = R[:, 2, :].abs().argmax(dim=1)                        
+        idx_h = torch.where(up_idx == 0, torch.ones_like(up_idx), torch.zeros_like(up_idx))
+        ax = R[torch.arange(R.shape[0], device=R.device), :, idx_h]    
+        cube_yaw = torch.atan2(ax[:, 1], ax[:, 0])
+        d = hand_yaw - cube_yaw
+        out += [torch.sin(4.0 * d).unsqueeze(1), torch.cos(4.0 * d).unsqueeze(1)]
+    return torch.cat(out, dim=1)
