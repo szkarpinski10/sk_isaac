@@ -392,3 +392,38 @@ def grasp_yaw_align(
     down = torch.clamp(-R_hand[:, 2, 2], 0.0, 1.0) ** 4                         
  
     return gate.float() * down * score
+
+
+def leave_up(
+    env: ManagerBasedRLEnv,
+    near_xy: float = 0.05,
+    near_z: float = 0.08,
+    side_coef: float = 2.0,
+    cube_1_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
+    cube_2_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+
+    robot = env.scene[robot_cfg.name]
+    c1 = env.scene[cube_1_cfg.name].data.root_pos_w.torch
+    c2 = env.scene[cube_2_cfg.name].data.root_pos_w.torch
+    ee = env.scene[ee_frame_cfg.name].data.target_pos_w.torch[:, 0, :]
+
+    diff = c2 - c1
+    on_top = (torch.linalg.norm(diff[:, :2], dim=1) < 0.03) & (torch.abs(diff[:, 2] - 0.05) < 0.01)
+
+    
+    finger_ids, _ = robot.find_joints(env.cfg.gripper_joint_names)
+    finger = robot.data.joint_pos.torch[:, finger_ids].mean(dim=1)
+    is_open = finger > (env.cfg.gripper_open_val - 0.005)
+
+
+    rel = ee - c2
+    near = (torch.linalg.norm(rel[:, :2], dim=1) < near_xy) & (rel[:, 2] < near_z)
+
+    hand_ids, _ = robot.find_bodies("panda_hand")
+    v = robot.data.body_lin_vel_w.torch[:, hand_ids[0], :]
+    r = v[:, 2] - side_coef * torch.linalg.norm(v[:, :2], dim=1)
+
+    return (on_top & is_open & near).float() * r
