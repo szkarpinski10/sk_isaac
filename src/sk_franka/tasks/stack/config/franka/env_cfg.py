@@ -21,6 +21,7 @@ from isaaclab.sensors import FrameTransformerCfg
 from isaaclab.sensors.frame_transformer.frame_transformer_cfg import OffsetCfg
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils import configclass
+from isaaclab.utils.noise import UniformNoiseCfg as Unoise
 from isaaclab.visualizers import VisualizerCfg
 from isaaclab_newton.physics import KaminoPADMMSolverCfg, MJWarpSolverCfg, NewtonCfg
 from isaaclab_ov.physics import OvPhysxCfg
@@ -56,6 +57,11 @@ _FRANKA_STACK_IK_REL_INIT_JOINT_POS: dict[str, float] = {
 
 _VEL = 1.0
 
+_TABLE_DEPTH = 1.30
+_TABLE_WIDTH = 0.85
+_TABLE_THICKNESS = 0.05
+_TABLE_EDGE_BEHIND_BASE = 0.175   
+
 @configclass
 class StackSceneCfg(InteractiveSceneCfg):
     """Configuration for a cart-pole scene."""
@@ -69,8 +75,15 @@ class StackSceneCfg(InteractiveSceneCfg):
 
     table = AssetBaseCfg(
         prim_path="{ENV_REGEX_NS}/Table",
-        init_state=AssetBaseCfg.InitialStateCfg(pos=[0.5, 0, 0], rot=[0, 0, 0.707, 0.707]),
-        spawn=sim_utils.UsdFileCfg(usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"),
+        init_state=AssetBaseCfg.InitialStateCfg(
+            pos=[_TABLE_DEPTH / 2 - _TABLE_EDGE_BEHIND_BASE, 0.0, -_TABLE_THICKNESS / 2],
+        ),
+        spawn=sim_utils.CuboidCfg(
+            size=(_TABLE_DEPTH, _TABLE_WIDTH, _TABLE_THICKNESS),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.55, 0.45, 0.35)),
+            physics_material=sim_utils.RigidBodyMaterialCfg(static_friction=0.5, dynamic_friction=0.45),
+        ),
     )
 
     # robot
@@ -214,10 +227,10 @@ class ActionsCfg:
     arm_action = mdp.RelativeJointPositionActionCfg(
         asset_name="robot",
         joint_names=["panda_joint.*"],
-        scale=0.03,              
+        scale=0.03,
         use_zero_offset=True,
     )
-    gripper_action = mdp.BinaryJointPositionActionCfg(   
+    gripper_action = mdp.BinaryJointPositionActionCfg(
         asset_name="robot",
         joint_names=["panda_finger.*"],
         open_command_expr={"panda_finger_.*": 0.04},
@@ -234,24 +247,24 @@ class ObservationsCfg:
         """Observations for policy group."""
 
         # observation terms (order preserved)
-        joint_pos_rel = ObsTerm(func=mdp.joint_pos_rel)
-        joint_vel_rel = ObsTerm(func=mdp.joint_vel_rel)
+        joint_pos_rel = ObsTerm(func=mdp.joint_pos_rel, noise=Unoise(n_min=-0.002, n_max=0.002))
+        joint_vel_rel = ObsTerm(func=mdp.joint_vel_rel, noise=Unoise(n_min=-0.02, n_max=0.02))
 
-        # actions 
+        # actions
         actions = ObsTerm(func=mdp.last_action)
 
-        # ee 
-        eef_pos = ObsTerm(func=mdp.ee_frame_pos)
-        eef_quat = ObsTerm(func=mdp.ee_frame_quat)
+        # ee
+        eef_pos = ObsTerm(func=mdp.ee_frame_pos, noise=Unoise(n_min=-0.002, n_max=0.002))
+        eef_quat = ObsTerm(func=mdp.ee_frame_quat, noise=Unoise(n_min=-0.002, n_max=0.002))
 
 
         # cubes
-        cubes_pos = ObsTerm(func=mdp.object_obs)
-        rel_yaw4 = ObsTerm(func=mdp.rel_yaw4)
+        cubes_pos = ObsTerm(func=mdp.object_obs, noise=Unoise(n_min=-0.003, n_max=0.003))
+        ee_cube_yaw = ObsTerm(func=mdp.ee_cube_yaw, noise=Unoise(n_min=-0.02, n_max=0.02))
 
 
         def __post_init__(self) -> None:
-            self.enable_corruption = False
+            self.enable_corruption = True
             self.concatenate_terms = True
 
     # observation groups
@@ -278,12 +291,12 @@ class EventCfg:
         func=mdp.randomize_object_pose_all_possibilities,
         mode="reset",
         params={
-            "pose_range": {"x": (0.4, 0.6), "y": (-0.10, 0.10), "z": (0.025, 0.025), "yaw": (-math.pi, math.pi)},
+            "pose_range": {"x": (0.35, 0.55), "y": (-0.20, 0.20), "z": (0.025, 0.025), "yaw": (-math.pi, math.pi)},
             "min_separation": 0.1,
             "asset_cfgs": [SceneEntityCfg("cube_1"), SceneEntityCfg("cube_2"), SceneEntityCfg("cube_3")],
         },
     )
-    randomize_cube_friction = EventTerm(
+    randomize_cube_2_friction = EventTerm(
         func=mdp.randomize_rigid_body_material,
         mode="startup",
         params={
@@ -295,12 +308,56 @@ class EventCfg:
         },
     )
 
-    
-    randomize_cube_mass = EventTerm(
+    randomize_cube_1_friction = EventTerm(
+        func=mdp.randomize_rigid_body_material,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("cube_1"),
+            "static_friction_range": (0.2, 0.8),
+            "dynamic_friction_range": (0.15, 0.7),
+            "restitution_range": (0.0, 0.0),
+            "num_buckets": 64,
+        },
+    )
+
+    randomize_cube_3_friction = EventTerm(
+        func=mdp.randomize_rigid_body_material,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("cube_3"),
+            "static_friction_range": (0.2, 0.8),
+            "dynamic_friction_range": (0.15, 0.7),
+            "restitution_range": (0.0, 0.0),
+            "num_buckets": 64,
+        },
+    )
+
+
+    randomize_cube_2_mass = EventTerm(
         func=mdp.randomize_rigid_body_mass,
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("cube_2"),
+            "mass_distribution_params": (0.03, 0.07),
+            "operation": "abs",
+        },
+    )
+
+    randomize_cube_1_mass = EventTerm(
+        func=mdp.randomize_rigid_body_mass,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("cube_1"),
+            "mass_distribution_params": (0.03, 0.07),
+            "operation": "abs",
+        },
+    )
+
+    randomize_cube_3_mass = EventTerm(
+        func=mdp.randomize_rigid_body_mass,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("cube_3"),
             "mass_distribution_params": (0.03, 0.07),
             "operation": "abs",
         },
@@ -316,6 +373,16 @@ class EventCfg:
             "operation": "scale",
             "distribution": "log_uniform",
         }
+    )
+
+    # prędkość palców: w MuJoCo 0.05 vs 0.1 m/s dawało 84% vs 90%, prawdziwy chwytak ok. 0.05
+    randomize_gripper_speed = EventTerm(
+        func=mdp.randomize_gripper_velocity_limit,
+        mode="reset",
+        params={
+            "velocity_range": (0.04, 0.1),
+            "asset_cfg": SceneEntityCfg("robot", joint_names=["panda_finger.*"]),
+        },
     )
 
 

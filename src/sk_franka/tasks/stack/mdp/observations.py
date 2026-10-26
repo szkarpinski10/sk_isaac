@@ -16,21 +16,6 @@ if TYPE_CHECKING:
 
 
 
-
-def object_position_in_robot_root_frame(
-    env: ManagerBasedRLEnv,
-    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
-) -> torch.Tensor:
-    """The position of the object in the robot's root frame."""
-    robot: RigidObject = env.scene[robot_cfg.name]
-    object: RigidObject = env.scene[object_cfg.name]
-    object_pos_w = object.data.root_pos_w.torch[:, :3]
-    object_pos_b, _ = subtract_frame_transforms(robot.data.root_pos_w.torch, robot.data.root_quat_w.torch, object_pos_w)
-    return object_pos_b
-
-
-
 def cube_positions_in_world_frame(
     env: ManagerBasedRLEnv,
     cube_1_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
@@ -281,41 +266,6 @@ def ee_frame_quat(env: ManagerBasedRLEnv, ee_frame_cfg: SceneEntityCfg = SceneEn
     return ee_frame_quat
 
 
-def gripper_pos(
-    env: ManagerBasedRLEnv,
-    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-) -> torch.Tensor:
-    """
-    Obtain the versatile gripper position of both Gripper and Suction Cup.
-    """
-    robot: Articulation = env.scene[robot_cfg.name]
-
-    if hasattr(env.scene, "surface_grippers") and len(env.scene.surface_grippers) > 0:
-        # Handle multiple surface grippers by concatenating their states
-        gripper_states = []
-        for gripper_name, surface_gripper in env.scene.surface_grippers.items():
-            gripper_states.append(wp.to_torch(surface_gripper.state).view(-1, 1))
-
-        if len(gripper_states) == 1:
-            return gripper_states[0]
-        else:
-            return torch.cat(gripper_states, dim=1)
-
-    else:
-        if hasattr(env.cfg, "gripper_joint_names"):
-            gripper_joint_ids, _ = robot.find_joints(env.cfg.gripper_joint_names)
-            if len(gripper_joint_ids) == 1:
-                # single-jaw gripper (e.g. SO-101)
-                return robot.data.joint_pos.torch[:, gripper_joint_ids[0]].clone().unsqueeze(1)
-            assert len(gripper_joint_ids) == 2, (
-                "Observation gripper_pos only supports single- or parallel-jaw (2-joint) grippers for now"
-            )
-            finger_joint_1 = robot.data.joint_pos.torch[:, gripper_joint_ids[0]].clone().unsqueeze(1)
-            finger_joint_2 = -1 * robot.data.joint_pos.torch[:, gripper_joint_ids[1]].clone().unsqueeze(1)
-            return torch.cat((finger_joint_1, finger_joint_2), dim=1)
-        else:
-            raise NotImplementedError("[Error] Cannot find gripper_joint_names in the environment config")
-
 
 def object_grasped(
     env: ManagerBasedRLEnv,
@@ -548,24 +498,32 @@ def ee_frame_pose_in_base_frame(
     else:
         return torch.cat((ee_pos_in_base, ee_quat_in_base), dim=1)
 
-def rel_yaw4(
+def ee_cube_yaw(
     env: ManagerBasedRLEnv,
     cube_1_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
     cube_2_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
     cube_3_cfg: SceneEntityCfg = SceneEntityCfg("cube_3"),
     ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
-) -> torch.Tensor:
+) ->torch.Tensor:
+    
+    cube_1: RigidObject = env.scene[cube_1_cfg.name]
+    cube_2: RigidObject = env.scene[cube_2_cfg.name]
+    cube_3: RigidObject = env.scene[cube_3_cfg.name]
     ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
-    R_hand = math_utils.matrix_from_quat(ee_frame.data.target_quat_w.torch[:, 0, :])
-    hand_yaw = torch.atan2(R_hand[:, 1, 1], R_hand[:, 0, 1])        
+    
+    rotation_hand = math_utils.matrix_from_quat(ee_frame.data.target_quat_w.torch[:,0,:])
+    hand_yaw = torch.atan2(rotation_hand[:,1,1],rotation_hand[:,0,1])
 
-    out = []
-    for cfg in (cube_1_cfg, cube_2_cfg, cube_3_cfg):
-        R = math_utils.matrix_from_quat(env.scene[cfg.name].data.root_quat_w.torch)
-        up_idx = R[:, 2, :].abs().argmax(dim=1)                        
-        idx_h = torch.where(up_idx == 0, torch.ones_like(up_idx), torch.zeros_like(up_idx))
-        ax = R[torch.arange(R.shape[0], device=R.device), :, idx_h]    
-        cube_yaw = torch.atan2(ax[:, 1], ax[:, 0])
-        d = hand_yaw - cube_yaw
-        out += [torch.sin(4.0 * d).unsqueeze(1), torch.cos(4.0 * d).unsqueeze(1)]
-    return torch.cat(out, dim=1)
+    out:list = []
+    
+    for i in (cube_1_cfg, cube_2_cfg, cube_3_cfg):
+        rotation_cubes = math_utils.matrix_from_quat(env.scene[i.name].data.root_quat_w.torch)
+        vertical_idx = rotation_cubes[:,2,:].abs().argmax(dim=1)
+        horizontal_idx = torch.where(vertical_idx == 0, torch.ones_like(vertical_idx), torch.zeros_like(vertical_idx))
+        horizontal_axis = rotation_cubes[torch.arange(rotation_cubes.shape[0], device = rotation_cubes.device),:,horizontal_idx]
+        cube_yaw = torch.atan2(horizontal_axis[:,1],horizontal_axis[:,0])
+        diff = hand_yaw - cube_yaw
+        out = out + [torch.sin(4.0*diff).unsqueeze(1), torch.cos(4.0*diff).unsqueeze(1)]
+    
+    return torch.cat(out,dim=1)
+    
