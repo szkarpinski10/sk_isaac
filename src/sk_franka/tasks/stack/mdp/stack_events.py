@@ -79,14 +79,9 @@ def randomize_gripper_velocity_limit(
     velocity_range: tuple[float, float],
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", joint_names=["panda_finger.*"]),
 ):
-    """Losuje maksymalną prędkość palców chwytaka [m/s] przy resecie.
-
-    To ta sama wartość co velocity_limit_sim chwytaka, tylko inna w każdym epizodzie,
-    żeby policy działała i przy szybkich, i przy wolnych palcach (prawdziwy chwytak Franki ok. 0.05 m/s na palec).
-    """
+   
     asset: Articulation = env.scene[asset_cfg.name]
 
-    # jedna prędkość na env, taka sama dla obu palców
     limits = math_utils.sample_uniform(velocity_range[0], velocity_range[1], (len(env_ids), 1), device=asset.device)
     limits = limits.repeat(1, len(asset_cfg.joint_ids))
 

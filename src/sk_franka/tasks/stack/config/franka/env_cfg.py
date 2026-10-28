@@ -375,7 +375,6 @@ class EventCfg:
         }
     )
 
-    # prędkość palców: w MuJoCo 0.05 vs 0.1 m/s dawało 84% vs 90%, prawdziwy chwytak ok. 0.05
     randomize_gripper_speed = EventTerm(
         func=mdp.randomize_gripper_velocity_limit,
         mode="reset",
@@ -469,8 +468,6 @@ class TerminationsCfg:
 
     # (1) Time out
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
-
-    
 
     cube_1_dropping = DoneTerm(
         func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cube_1")}
