@@ -197,7 +197,7 @@ def home_return(
     xy_threshold: float = 0.02,
     height_diff: float = 0.05,
     atol: float = 0.005,
-    clear_height: float = 0.08,
+    clear_height: float = 0.13,
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     cube_2_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
     ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
@@ -382,8 +382,7 @@ def grasp_yaw_align(
 def leave_up(
     env: ManagerBasedRLEnv,
     xy_threshold: float = 0.05,
-    z_threshold: float = 0.08,
-    side_coef: float = 2.0,
+    z_threshold: float = 0.13,
     cube_1_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
     cube_2_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
     ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
@@ -408,6 +407,8 @@ def leave_up(
 
     hand_ids, _ = robot.find_bodies("panda_hand")
     hand_vel = robot.data.body_lin_vel_w.torch[:, hand_ids[0], :]
-    up_speed = hand_vel[:, 2] - side_coef * torch.linalg.norm(hand_vel[:, :2], dim=1)
+    up = hand_vel[:, 2]
+    side = torch.linalg.norm(hand_vel[:, :2], dim=1)
+    up_speed = up - 2.0 * side
 
     return (on_top & is_open & near).float() * up_speed

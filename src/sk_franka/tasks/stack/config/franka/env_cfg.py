@@ -55,12 +55,12 @@ _FRANKA_STACK_IK_REL_INIT_JOINT_POS: dict[str, float] = {
     "panda_finger_joint.*": 0.0400,
 }
 
-_VEL = 1.0
+_VEL = 0.8
 
 _TABLE_DEPTH = 1.30
 _TABLE_WIDTH = 0.85
 _TABLE_THICKNESS = 0.05
-_TABLE_EDGE_BEHIND_BASE = 0.175   
+_TABLE_EDGE_BEHIND_BASE = 0.20
 
 @configclass
 class StackSceneCfg(InteractiveSceneCfg):
@@ -423,7 +423,7 @@ class RewardsCfg:
     grasp_height = RewTerm(func=mdp.grasp_height, params={"std": 0.02}, weight=3.0)
     place_height = RewTerm(func=mdp.place_height, params={"std": 0.03}, weight=3.0)
     grasp_yaw_align = RewTerm(func=mdp.grasp_yaw_align, weight=1.0)
-    leave_up = RewTerm(func=mdp.leave_up, weight=5.0)
+    leave_up = RewTerm(func=mdp.leave_up, weight=10.0)
     # action penalty
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
 

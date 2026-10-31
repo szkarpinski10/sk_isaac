@@ -8,6 +8,10 @@ from isaaclab.utils import configclass
 from isaaclab_rl.rsl_rl import RslRlMLPModelCfg, RslRlOnPolicyRunnerCfg, RslRlPpoAlgorithmCfg
 
 @configclass
+class CappedGaussianCfg(RslRlMLPModelCfg.GaussianDistributionCfg):
+    std_range: tuple = (0.0, 2.0)
+
+@configclass
 class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 24
     max_iterations = 1500
@@ -17,7 +21,7 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         hidden_dims=[256, 128, 64],
         activation="elu",
         obs_normalization=False,
-        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=1.0),
+        distribution_cfg=CappedGaussianCfg(init_std=1.0),
     )
     critic = RslRlMLPModelCfg(
         hidden_dims=[256, 128, 64],
