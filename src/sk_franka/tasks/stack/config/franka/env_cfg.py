@@ -224,11 +224,11 @@ class StackSceneCfg(InteractiveSceneCfg):
 class ActionsCfg:
     """Action specifications for the MDP."""
 
-    arm_action = mdp.RelativeJointPositionActionCfg(
+    arm_action = mdp.RobotJointPositionActionCfg(
         asset_name="robot",
         joint_names=["panda_joint.*"],
         scale=0.03,
-        use_zero_offset=True,
+        max_velocity=_VEL,
     )
     gripper_action = mdp.BinaryJointPositionActionCfg(
         asset_name="robot",
@@ -259,7 +259,7 @@ class ObservationsCfg:
 
 
         # cubes
-        cubes_pos = ObsTerm(func=mdp.object_obs, noise=Unoise(n_min=-0.003, n_max=0.003))
+        cubes_pos = ObsTerm(func=mdp.object_obs, noise=Unoise(n_min=-0.004, n_max=0.004))
         ee_cube_yaw = ObsTerm(func=mdp.ee_cube_yaw, noise=Unoise(n_min=-0.02, n_max=0.02))
 
 
@@ -368,8 +368,8 @@ class EventCfg:
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("robot", joint_names=["panda_joint.*"]),
-            "stiffness_distribution_params": (0.75, 5.0),
-            "damping_distribution_params": (0.75, 2.5),
+            "stiffness_distribution_params": (0.75, 1.5),
+            "damping_distribution_params": (0.75, 1.5),
             "operation": "scale",
             "distribution": "log_uniform",
         }
@@ -424,6 +424,8 @@ class RewardsCfg:
     place_height = RewTerm(func=mdp.place_height, params={"std": 0.03}, weight=3.0)
     grasp_yaw_align = RewTerm(func=mdp.grasp_yaw_align, weight=1.0)
     leave_up = RewTerm(func=mdp.leave_up, weight=10.0)
+    slow_descent_table = RewTerm(func=mdp.slow_descent_table, weight=-30.0)
+    gripper_tilt_near_table = RewTerm(func=mdp.gripper_tilt_near_table, weight=0.0)
     # action penalty
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
 
@@ -458,6 +460,11 @@ class CurriculumCfg:
 
     arm_action_l2=CurrTerm(
         func=mdp.modify_reward_weight, params={"term_name": "arm_action_l2", "weight": -0.0045, "num_steps": 10000}
+    )
+
+    # kara za przechył chwytaka przy stole dopiero od ~600 it (24 kroki na iterację), gdy robot już umie chwytać
+    gripper_tilt_near_table = CurrTerm(
+        func=mdp.modify_reward_weight, params={"term_name": "gripper_tilt_near_table", "weight": -20.0, "num_steps": 14400}
     )
 
     
@@ -534,6 +541,14 @@ class StackEnvCfg(ManagerBasedRLEnvCfg):
             friction_correlation_distance=0.00625,
         )
 
-        for name in ("panda_shoulder","panda_forearm"):
-            self.scene.robot.actuators[name].velocity_limit_sim=_VEL
+        # wzmocnienia jak domyślny panda_py JointPosition na prawdziwym robocie
+        shoulder = self.scene.robot.actuators["panda_shoulder"]
+        shoulder.stiffness = {"panda_joint[1-4]": 600.0}
+        shoulder.damping = {"panda_joint[1-3]": 50.0, "panda_joint4": 20.0}
+        forearm = self.scene.robot.actuators["panda_forearm"]
+        forearm.stiffness = {"panda_joint5": 250.0, "panda_joint6": 150.0, "panda_joint7": 50.0}
+        forearm.damping = {"panda_joint[5-6]": 20.0, "panda_joint7": 10.0}
+        # prędkość ogranicza akcja (jak robot_franka), PhysX dopiero na limicie Franki
+        shoulder.velocity_limit_sim = 2.175
+        forearm.velocity_limit_sim = 2.61
         self.scene.robot.actuators["panda_hand"].velocity_limit_sim = 0.1
