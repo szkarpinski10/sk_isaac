@@ -445,3 +445,17 @@ def gripper_tilt_near_table(
     near_table = ee_z < height
 
     return near_table.float() * tilt
+
+
+def finger_too_low(
+    env: ManagerBasedRLEnv,
+    min_height: float = 0.02,
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+) -> torch.Tensor:
+    ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
+    # punkty na palcach (tool_rightfinger, tool_leftfinger); przy pionowym chwytaku są na wysokości TCP,
+    # czubki palców ok. 1 cm niżej -> poniżej 2 cm zostaje mały zapas nad blatem
+    finger_z = ee_frame.data.target_pos_w.torch[:, 1:3, 2].min(dim=1).values
+
+    # 0 powyżej 2 cm, rośnie do 1 przy 1 cm
+    return torch.clamp((min_height - finger_z) / 0.01, 0.0, 1.0)

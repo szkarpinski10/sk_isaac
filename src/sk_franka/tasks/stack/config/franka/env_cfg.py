@@ -426,6 +426,7 @@ class RewardsCfg:
     leave_up = RewTerm(func=mdp.leave_up, weight=10.0)
     slow_descent_table = RewTerm(func=mdp.slow_descent_table, weight=-30.0)
     gripper_tilt_near_table = RewTerm(func=mdp.gripper_tilt_near_table, weight=0.0)
+    finger_too_low = RewTerm(func=mdp.finger_too_low, weight=0.0)
     # action penalty
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
 
@@ -465,6 +466,10 @@ class CurriculumCfg:
     # kara za przechył chwytaka przy stole dopiero od ~600 it (24 kroki na iterację), gdy robot już umie chwytać
     gripper_tilt_near_table = CurrTerm(
         func=mdp.modify_reward_weight, params={"term_name": "gripper_tilt_near_table", "weight": -20.0, "num_steps": 14400}
+    )
+
+    finger_too_low = CurrTerm(
+        func=mdp.modify_reward_weight, params={"term_name": "finger_too_low", "weight": -20.0, "num_steps": 14400}
     )
 
     
