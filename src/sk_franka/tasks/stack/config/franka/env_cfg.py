@@ -224,11 +224,11 @@ class StackSceneCfg(InteractiveSceneCfg):
 class ActionsCfg:
     """Action specifications for the MDP."""
 
-    arm_action = mdp.RobotJointPositionActionCfg(
+    arm_action = mdp.RelativeJointPositionActionCfg(
         asset_name="robot",
         joint_names=["panda_joint.*"],
         scale=0.03,
-        max_velocity=_VEL,
+        use_zero_offset=True,
     )
     gripper_action = mdp.BinaryJointPositionActionCfg(
         asset_name="robot",
@@ -368,8 +368,8 @@ class EventCfg:
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("robot", joint_names=["panda_joint.*"]),
-            "stiffness_distribution_params": (0.75, 1.5),
-            "damping_distribution_params": (0.75, 1.5),
+            "stiffness_distribution_params": (0.75, 2.0),
+            "damping_distribution_params": (0.75, 2.0),
             "operation": "scale",
             "distribution": "log_uniform",
         }
@@ -424,9 +424,6 @@ class RewardsCfg:
     place_height = RewTerm(func=mdp.place_height, params={"std": 0.03}, weight=3.0)
     grasp_yaw_align = RewTerm(func=mdp.grasp_yaw_align, weight=1.0)
     leave_up = RewTerm(func=mdp.leave_up, weight=10.0)
-    slow_descent_table = RewTerm(func=mdp.slow_descent_table, weight=-30.0)
-    gripper_tilt_near_table = RewTerm(func=mdp.gripper_tilt_near_table, weight=0.0)
-    finger_too_low = RewTerm(func=mdp.finger_too_low, weight=0.0)
     # action penalty
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
 
@@ -461,15 +458,6 @@ class CurriculumCfg:
 
     arm_action_l2=CurrTerm(
         func=mdp.modify_reward_weight, params={"term_name": "arm_action_l2", "weight": -0.0045, "num_steps": 10000}
-    )
-
-    # kara za przechył chwytaka przy stole dopiero od ~600 it (24 kroki na iterację), gdy robot już umie chwytać
-    gripper_tilt_near_table = CurrTerm(
-        func=mdp.modify_reward_weight, params={"term_name": "gripper_tilt_near_table", "weight": -20.0, "num_steps": 14400}
-    )
-
-    finger_too_low = CurrTerm(
-        func=mdp.modify_reward_weight, params={"term_name": "finger_too_low", "weight": -20.0, "num_steps": 14400}
     )
 
     
@@ -546,6 +534,9 @@ class StackEnvCfg(ManagerBasedRLEnvCfg):
             friction_correlation_distance=0.00625,
         )
 
+        for name in ("panda_shoulder","panda_forearm"):
+            self.scene.robot.actuators[name].velocity_limit_sim=_VEL
+
         # wzmocnienia jak domyślny panda_py JointPosition na prawdziwym robocie
         shoulder = self.scene.robot.actuators["panda_shoulder"]
         shoulder.stiffness = {"panda_joint[1-4]": 600.0}
@@ -553,7 +544,4 @@ class StackEnvCfg(ManagerBasedRLEnvCfg):
         forearm = self.scene.robot.actuators["panda_forearm"]
         forearm.stiffness = {"panda_joint5": 250.0, "panda_joint6": 150.0, "panda_joint7": 50.0}
         forearm.damping = {"panda_joint[5-6]": 20.0, "panda_joint7": 10.0}
-        # prędkość ogranicza akcja (jak robot_franka), PhysX dopiero na limicie Franki
-        shoulder.velocity_limit_sim = 2.175
-        forearm.velocity_limit_sim = 2.61
         self.scene.robot.actuators["panda_hand"].velocity_limit_sim = 0.1

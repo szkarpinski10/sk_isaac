@@ -4,8 +4,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 __all__ = [
-    # actions
-    "RobotJointPositionActionCfg",
     # observations
     "ee_frame_pos",
     "ee_frame_quat",
@@ -26,9 +24,6 @@ __all__ = [
     "place_height",
     "grasp_yaw_align",
     "leave_up",
-    "slow_descent_table",
-    "gripper_tilt_near_table",
-    "finger_too_low",
     # terminations
     "cubes_stacked",
     #stack_events
@@ -42,8 +37,7 @@ __all__ = [
 from isaaclab.envs.mdp import *  # noqa: F401, F403
 
 
-from .actions import RobotJointPositionActionCfg
 from .observations import ee_frame_pos, ee_frame_quat, object_obs, ee_cube_yaw
-from .rewards import object_ee_distance, object_goal_distance, object_is_lifted, object_goal_distance_above_target, cube_2_on_cube_1, release_cube, home_return, tower_knocked, arm_action_l2, ee_cube_align, grasp_height, place_height, grasp_yaw_align, leave_up, slow_descent_table, gripper_tilt_near_table, finger_too_low
+from .rewards import object_ee_distance, object_goal_distance, object_is_lifted, object_goal_distance_above_target, cube_2_on_cube_1, release_cube, home_return, tower_knocked, arm_action_l2, ee_cube_align, grasp_height, place_height, grasp_yaw_align, leave_up
 from .terminations import cubes_stacked
 from .stack_events import randomize_object_pose, randomize_joint_by_gaussian_offset, randomize_object_pose_all_possibilities, randomize_gripper_velocity_limit

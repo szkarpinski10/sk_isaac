@@ -9,7 +9,7 @@ from isaaclab_rl.rsl_rl import RslRlMLPModelCfg, RslRlOnPolicyRunnerCfg, RslRlPp
 
 @configclass
 class CappedGaussianCfg(RslRlMLPModelCfg.GaussianDistributionCfg):
-    std_range: tuple = (0.0, 1.0)
+    std_range: tuple = (0.0, 2.0)
 
 @configclass
 class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
