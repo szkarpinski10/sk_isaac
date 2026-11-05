@@ -225,7 +225,7 @@ class StackSceneCfg(InteractiveSceneCfg):
 class ActionsCfg:
     """Action specifications for the MDP."""
 
-    arm_action = mdp.SmoothedRelativeJointPositionActionCfg(
+    arm_action = mdp.RelativeJointPositionActionCfg(
         asset_name="robot",
         joint_names=["panda_joint.*"],
         scale=0.03,
