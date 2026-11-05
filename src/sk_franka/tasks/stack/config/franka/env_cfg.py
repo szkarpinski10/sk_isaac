@@ -55,8 +55,8 @@ _FRANKA_STACK_IK_REL_INIT_JOINT_POS: dict[str, float] = {
     "panda_finger_joint.*": 0.0400,
 }
 
-_VEL = 0.27                     # rad/s: 0.8 / 3, krok policy co 60 ms -> nadal 0.016 rad na krok
-_FINGER_VEL = 0.033             # m/s na palec: 0.1 / 3 (chwytak tyle samo razy wolniej co stawy)
+_VEL = 0.3                      # rad/s; krok policy co 60 ms -> 0.018 rad na krok
+_FINGER_VEL = 0.03              # m/s na palec
 
 _TABLE_DEPTH = 1.30
 _TABLE_WIDTH = 0.85
