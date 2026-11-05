@@ -2,9 +2,39 @@ from __future__ import annotations
 
 import torch
 
-from isaaclab.envs.mdp.actions.actions_cfg import JointActionCfg
-from isaaclab.envs.mdp.actions.joint_actions import JointAction
+from isaaclab.envs.mdp.actions.actions_cfg import JointActionCfg, RelativeJointPositionActionCfg
+from isaaclab.envs.mdp.actions.joint_actions import JointAction, RelativeJointPositionAction
 from isaaclab.utils import configclass
+
+
+class SmoothedRelativeJointPositionAction(RelativeJointPositionAction):
+    """Cel = q + skala * akcja (jak RelativeJointPositionAction), ale wygładzony jak w sterowniku robota:
+    co krok fizyki cel przesuwa się o część `smoothing` pozostałej drogi (panda_py JointPosition.set_filter(0.05)
+    co 1 ms = 0.40 co 10 ms), więc nie skacze co krok policy."""
+
+    def __init__(self, cfg: SmoothedRelativeJointPositionActionCfg, env):
+        super().__init__(cfg, env)
+        self._target = self._asset.data.joint_pos.torch[:, self._joint_ids].clone()
+        self._needs_init = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
+
+    def apply_actions(self):
+        q = self._asset.data.joint_pos.torch[:, self._joint_ids]
+        self._target[self._needs_init] = q[self._needs_init]
+        self._needs_init[:] = False
+        self._target += self.cfg.smoothing * (q + self.processed_actions - self._target)
+        self._asset.set_joint_position_target_index(target=self._target, joint_ids=self._joint_ids)
+
+    def reset(self, env_ids=None):
+        super().reset(env_ids)
+        if env_ids is None:
+            env_ids = slice(None)
+        self._needs_init[env_ids] = True
+
+
+@configclass
+class SmoothedRelativeJointPositionActionCfg(RelativeJointPositionActionCfg):
+    class_type: type = SmoothedRelativeJointPositionAction
+    smoothing: float = 0.40
 
 
 class RobotJointPositionAction(JointAction):

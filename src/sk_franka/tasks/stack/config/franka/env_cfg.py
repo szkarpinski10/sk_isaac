@@ -55,7 +55,8 @@ _FRANKA_STACK_IK_REL_INIT_JOINT_POS: dict[str, float] = {
     "panda_finger_joint.*": 0.0400,
 }
 
-_VEL = 0.8
+_VEL = 0.27                     # rad/s: 0.8 / 3, krok policy co 60 ms -> nadal 0.016 rad na krok
+_FINGER_VEL = 0.033             # m/s na palec: 0.1 / 3 (chwytak tyle samo razy wolniej co stawy)
 
 _TABLE_DEPTH = 1.30
 _TABLE_WIDTH = 0.85
@@ -224,7 +225,7 @@ class StackSceneCfg(InteractiveSceneCfg):
 class ActionsCfg:
     """Action specifications for the MDP."""
 
-    arm_action = mdp.RelativeJointPositionActionCfg(
+    arm_action = mdp.SmoothedRelativeJointPositionActionCfg(
         asset_name="robot",
         joint_names=["panda_joint.*"],
         scale=0.03,
@@ -379,7 +380,7 @@ class EventCfg:
         func=mdp.randomize_gripper_velocity_limit,
         mode="reset",
         params={
-            "velocity_range": (0.04, 0.1),
+            "velocity_range": (0.4 * _FINGER_VEL, _FINGER_VEL),
             "asset_cfg": SceneEntityCfg("robot", joint_names=["panda_finger.*"]),
         },
     )
@@ -518,8 +519,8 @@ class StackEnvCfg(ManagerBasedRLEnvCfg):
         self.gripper_threshold = 0.005
 
         # general settings
-        self.decimation = 2
-        self.episode_length_s = 20
+        self.decimation = 6             # krok policy 60 ms (robot: PROFIL nowy_B)
+        self.episode_length_s = 60      # nadal 1000 kroków policy
         
         # visualizer camera settings
         self.sim.default_visualizer_cfg = VisualizerCfg(eye=(8.0, 0.0, 5.0))
@@ -544,4 +545,4 @@ class StackEnvCfg(ManagerBasedRLEnvCfg):
         forearm = self.scene.robot.actuators["panda_forearm"]
         forearm.stiffness = {"panda_joint5": 250.0, "panda_joint6": 150.0, "panda_joint7": 50.0}
         forearm.damping = {"panda_joint[5-6]": 20.0, "panda_joint7": 10.0}
-        self.scene.robot.actuators["panda_hand"].velocity_limit_sim = 0.1
+        self.scene.robot.actuators["panda_hand"].velocity_limit_sim = _FINGER_VEL
