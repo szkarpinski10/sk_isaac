@@ -450,7 +450,7 @@ class CommandsCfg:
 @configclass
 class CurriculumCfg:
     action_rate = CurrTerm(
-        func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -1e-1, "num_steps": 10000}
+        func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -1e-1, "num_steps": 36000}
     )
 
     joint_vel = CurrTerm(
@@ -458,7 +458,7 @@ class CurriculumCfg:
     )
 
     arm_action_l2=CurrTerm(
-        func=mdp.modify_reward_weight, params={"term_name": "arm_action_l2", "weight": 0.0, "num_steps": 10000}
+        func=mdp.modify_reward_weight, params={"term_name": "arm_action_l2", "weight": -0.0045, "num_steps": 10000}
     )
 
     
