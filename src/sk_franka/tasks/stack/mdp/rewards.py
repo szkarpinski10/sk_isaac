@@ -309,11 +309,17 @@ class place_height(ManagerTermBase):
         robot = env.scene["robot"]
         self._finger_ids, _ = robot.find_joints(env.cfg.gripper_joint_names)
         self._prev_finger = torch.full((env.num_envs,), 0.04, device=env.device)
+        self._pomiary = {"speed": [], "height": [], "xy": [], "ok": []}
 
     def reset(self, env_ids=None):
         if env_ids is None:
             env_ids = slice(None)
-        self._prev_finger[env_ids] = 0.04          
+        self._prev_finger[env_ids] = 0.04
+        if self._pomiary["speed"]:                  # Metrics/release_*: jak puszcza kostkę nad niebieską
+            log = self._env.extras.setdefault("log", {})
+            for k, v in self._pomiary.items():
+                log[f"Metrics/release_{k}"] = torch.cat(v).float().mean().item()
+            self._pomiary = {k: [] for k in self._pomiary}
 
     def __call__(
         self,
@@ -324,6 +330,8 @@ class place_height(ManagerTermBase):
         xy_threshold: float = 0.08,
         release_bonus: float = 10.0,
         open_threshold: float = 0.035,
+        speed_std: float = 0.05,
+        in_hand_dist: float = 0.03,
         cube_1_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
         cube_2_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
         ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
@@ -335,15 +343,24 @@ class place_height(ManagerTermBase):
         diff_xy = torch.linalg.norm(cube_2_pos[:, :2] - cube_1_pos[:, :2], dim=1)
         height_error = (cube_2_pos[:, 2] - cube_1_pos[:, 2]) - height_diff
         above_cube_1 = (diff_xy < xy_threshold) & (height_error > -0.01) & (height_error < 0.10)
-        in_hand = torch.linalg.norm(ee_pos - cube_2_pos, dim=1) < 0.03
+        in_hand = torch.linalg.norm(ee_pos - cube_2_pos, dim=1) < in_hand_dist
         lifted = cube_2_pos[:, 2] > 0.04
 
         finger = env.scene["robot"].data.joint_pos.torch[:, self._finger_ids].mean(dim=1)
         opened_now = (self._prev_finger < open_threshold) & (finger >= open_threshold)
         self._prev_finger = finger.clone()
 
-        h = torch.exp(-torch.square(height_error / std)) * torch.exp(-torch.square(diff_xy / xy_std))
+        robot = env.scene["robot"]
+        hand_id = robot.find_bodies("panda_hand")[0][0]
+        speed = torch.linalg.norm(robot.data.body_lin_vel_w.torch[:, hand_id, :], dim=1)
+        h = (torch.exp(-torch.square(height_error / std)) * torch.exp(-torch.square(diff_xy / xy_std))
+             * torch.exp(-torch.square(speed / speed_std)))
         released = above_cube_1 & in_hand & lifted & opened_now
+
+        if released.any():
+            ok = (speed < 0.05) & (height_error > -0.01) & (height_error < 0.015) & (diff_xy < 0.015)
+            for k, v in (("speed", speed), ("height", height_error), ("xy", diff_xy), ("ok", ok)):
+                self._pomiary[k].append(v[released])
 
         return released.float() * release_bonus * (2.0*h-1.0)
 
@@ -379,36 +396,18 @@ def grasp_yaw_align(
     return near.float() * yaw_align * pointing_down
 
 
-def leave_up(
+
+def descend_off_center(
     env: ManagerBasedRLEnv,
-    xy_threshold: float = 0.05,
-    z_threshold: float = 0.13,
-    cube_1_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
-    cube_2_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
+    max_xy: float = 0.01,
+    above_top: float = 0.01,
+    cube_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
     ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
-    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ) -> torch.Tensor:
-    robot: Articulation = env.scene[robot_cfg.name]
-    cube_1_pos = env.scene[cube_1_cfg.name].data.root_pos_w.torch
-    cube_2_pos = env.scene[cube_2_cfg.name].data.root_pos_w.torch
+    """1, gdy chwytak schodzi do wierzchu leżącej kostki, a nie jest nad jej środkiem (palec trafi w wierzch)."""
+    cube_pos = env.scene[cube_cfg.name].data.root_pos_w.torch
     ee_pos = env.scene[ee_frame_cfg.name].data.target_pos_w.torch[:, 0, :]
-
-    cubes_xy = torch.linalg.norm(cube_2_pos[:, :2] - cube_1_pos[:, :2], dim=1)
-    height_error = (cube_2_pos[:, 2] - cube_1_pos[:, 2]) - 0.05
-    on_top = (cubes_xy < 0.03) & (torch.abs(height_error) < 0.01)
-
-    finger_ids, _ = robot.find_joints(env.cfg.gripper_joint_names)
-    finger = robot.data.joint_pos.torch[:, finger_ids].mean(dim=1)
-    is_open = finger > (env.cfg.gripper_open_val - 0.005)
-
-    diff_xy = torch.linalg.norm(ee_pos[:, :2] - cube_2_pos[:, :2], dim=1)
-    diff_z = ee_pos[:, 2] - cube_2_pos[:, 2]
-    near = (diff_xy < xy_threshold) & (diff_z < z_threshold)
-
-    hand_ids, _ = robot.find_bodies("panda_hand")
-    hand_vel = robot.data.body_lin_vel_w.torch[:, hand_ids[0], :]
-    up = hand_vel[:, 2]
-    side = torch.linalg.norm(hand_vel[:, :2], dim=1)
-    up_speed = up - 2.0 * side
-
-    return (on_top & is_open & near).float() * up_speed
+    off_center = torch.linalg.norm(ee_pos[:, :2] - cube_pos[:, :2], dim=1) > max_xy
+    low = ee_pos[:, 2] - cube_pos[:, 2] < 0.025 + above_top
+    on_table = cube_pos[:, 2] < 0.04
+    return (off_center & low & on_table).float()

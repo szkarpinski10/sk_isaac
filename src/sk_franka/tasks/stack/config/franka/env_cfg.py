@@ -124,9 +124,12 @@ class StackSceneCfg(InteractiveSceneCfg):
             visual_material=sim_utils.PreviewSurfaceCfg(
                 diffuse_color=(0.0, 0.0, 1.0),
             ),
+            # tarcie: liczy się wartość kostki (min), odbicie: stół go nie obniża (max)
             physics_material=sim_utils.RigidBodyMaterialCfg(
                 static_friction=0.5,
                 dynamic_friction=0.45,
+                friction_combine_mode="min",
+                restitution_combine_mode="max",
             ),
         ),
     )
@@ -155,6 +158,8 @@ class StackSceneCfg(InteractiveSceneCfg):
             physics_material=sim_utils.RigidBodyMaterialCfg(
                 static_friction=0.5,
                 dynamic_friction=0.45,
+                friction_combine_mode="min",
+                restitution_combine_mode="max",
             ),
         ),
     )
@@ -180,9 +185,12 @@ class StackSceneCfg(InteractiveSceneCfg):
             visual_material=sim_utils.PreviewSurfaceCfg(
                 diffuse_color=(0.0, 1.0, 0.0),
             ),
+            # tarcie: liczy się wartość kostki (min), odbicie: stół go nie obniża (max)
             physics_material=sim_utils.RigidBodyMaterialCfg(
                 static_friction=0.5,
                 dynamic_friction=0.45,
+                friction_combine_mode="min",
+                restitution_combine_mode="max",
             ),
         ),
     )
@@ -302,9 +310,9 @@ class EventCfg:
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("cube_2"),
-            "static_friction_range": (0.2, 0.8),
-            "dynamic_friction_range": (0.15, 0.7),
-            "restitution_range": (0.0, 0.0),
+            "static_friction_range": (0.2, 0.5),
+            "dynamic_friction_range": (0.15, 0.45),
+            "restitution_range": (0.2, 0.5),
             "num_buckets": 64,
         },
     )
@@ -314,9 +322,9 @@ class EventCfg:
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("cube_1"),
-            "static_friction_range": (0.2, 0.8),
-            "dynamic_friction_range": (0.15, 0.7),
-            "restitution_range": (0.0, 0.0),
+            "static_friction_range": (0.2, 0.5),
+            "dynamic_friction_range": (0.15, 0.45),
+            "restitution_range": (0.2, 0.5),
             "num_buckets": 64,
         },
     )
@@ -326,9 +334,9 @@ class EventCfg:
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("cube_3"),
-            "static_friction_range": (0.2, 0.8),
-            "dynamic_friction_range": (0.15, 0.7),
-            "restitution_range": (0.0, 0.0),
+            "static_friction_range": (0.2, 0.5),
+            "dynamic_friction_range": (0.15, 0.45),
+            "restitution_range": (0.2, 0.5),
             "num_buckets": 64,
         },
     )
@@ -422,17 +430,17 @@ class RewardsCfg:
     
     xy_align = RewTerm(func=mdp.ee_cube_align, params={"std": 0.02}, weight=2.0)
     grasp_height = RewTerm(func=mdp.grasp_height, params={"std": 0.02}, weight=3.0)
-    place_height = RewTerm(func=mdp.place_height, params={"std": 0.03}, weight=3.0)
+    # puszczanie: od 2.7 cm palca (start otwierania), nagroda za dokładne i spokojne puszczenie, kara za rzut;
+    # waga 0 na start, 30 od it 1250 (curriculum), gdy robot już stawia wieżę
+    place_height = RewTerm(func=mdp.place_height, params={"std": 0.01, "xy_std": 0.02, "open_threshold": 0.027,
+                                                          "speed_std": 0.15, "in_hand_dist": 0.05}, weight=0.0)
     grasp_yaw_align = RewTerm(func=mdp.grasp_yaw_align, weight=1.0)
-    leave_up = RewTerm(func=mdp.leave_up, weight=10.0)
+    # zejście do wierzchu kostki, gdy chwytak nie jest nad jej środkiem (na robocie palec siada na kostce):
+    # waga 0, -10 od it 1100 (curriculum)
+    descend_off_center = RewTerm(func=mdp.descend_off_center, weight=0.0)
     # action penalty
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
 
-    joint_vel = RewTerm(
-        func=mdp.joint_vel_l2,
-        weight=-1e-4,
-        params={"asset_cfg": SceneEntityCfg("robot")},
-    )
 
     tower_knocked_penalty = RewTerm(
         func = mdp.is_terminated_term,
@@ -453,12 +461,17 @@ class CurriculumCfg:
         func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -0.009, "num_steps": 10000}
     )
 
-    joint_vel = CurrTerm(
-        func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -1e-1, "num_steps": 10000}
-    )
 
     arm_action_l2=CurrTerm(
         func=mdp.modify_reward_weight, params={"term_name": "arm_action_l2", "weight": -0.0045, "num_steps": 10000}
+    )
+
+    # najpierw nauka chwytu i stawiania jak w nowy_B, potem dokładne puszczanie (24 kroki na iterację)
+    place_height = CurrTerm(
+        func=mdp.modify_reward_weight, params={"term_name": "place_height", "weight": 30.0, "num_steps": 30000}
+    )
+    descend_off_center = CurrTerm(
+        func=mdp.modify_reward_weight, params={"term_name": "descend_off_center", "weight": -10.0, "num_steps": 26400}
     )
 
     
