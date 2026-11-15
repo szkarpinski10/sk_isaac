@@ -409,7 +409,7 @@ class RewardsCfg:
     # naprowadzanie cube 3 nad cube 2
     object_goal_tracking = RewTerm(
         func=mdp.object_goal_distance_above_target,
-        params={"std": 0.3, "minimal_height": 0.04, "success_threshold": 0.05, "object_cfg": SceneEntityCfg("cube_3"), "target_cfg": SceneEntityCfg("cube_2")},
+        params={"std": 0.3, "minimal_height": 0.04, "object_cfg": SceneEntityCfg("cube_3"), "target_cfg": SceneEntityCfg("cube_2")},
         weight=4.0,
     )
 
