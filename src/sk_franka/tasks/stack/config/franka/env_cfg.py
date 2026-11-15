@@ -438,6 +438,8 @@ class RewardsCfg:
     # zejście do wierzchu kostki, gdy chwytak nie jest nad jej środkiem (na robocie palec siada na kostce):
     # waga 0, -10 od it 1100 (curriculum)
     descend_off_center = RewTerm(func=mdp.descend_off_center, weight=0.0)
+    # ruch niebieskiej kostki (potrącenie ramieniem, ciągnięcie wieży przy odkładaniu): waga 0, -50 od it 1500
+    cube_1_moving = RewTerm(func=mdp.cube_1_moving, weight=0.0)
     # action penalty
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
 
@@ -472,6 +474,9 @@ class CurriculumCfg:
     )
     descend_off_center = CurrTerm(
         func=mdp.modify_reward_weight, params={"term_name": "descend_off_center", "weight": -10.0, "num_steps": 26400}
+    )
+    cube_1_moving = CurrTerm(
+        func=mdp.modify_reward_weight, params={"term_name": "cube_1_moving", "weight": -50.0, "num_steps": 36000}
     )
 
     

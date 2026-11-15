@@ -411,3 +411,8 @@ def descend_off_center(
     low = ee_pos[:, 2] - cube_pos[:, 2] < 0.025 + above_top
     on_table = cube_pos[:, 2] < 0.04
     return (off_center & low & on_table).float()
+
+
+def cube_1_moving(env: ManagerBasedRLEnv, cube_cfg: SceneEntityCfg = SceneEntityCfg("cube_1")) -> torch.Tensor:
+    """Prędkość niebieskiej kostki [m/s] - powinna stać w miejscu przez cały epizod (nie popychać, nie ciągnąć wieży)."""
+    return torch.linalg.norm(env.scene[cube_cfg.name].data.root_lin_vel_w.torch, dim=1)
