@@ -146,12 +146,15 @@ def cube_2_on_cube_1(
         height_diff: float = 0.05,
         atol: float = 0.005,
         speed_std: float = 0.05,
+        cube_1_cfg:SceneEntityCfg = SceneEntityCfg("cube_1"),
         cube_2_cfg:SceneEntityCfg = SceneEntityCfg("cube_2"),
 
 
 ) ->torch.Tensor: 
     stacked = cubes_stacked(
         env,
+        cube_1_cfg = cube_1_cfg,
+        cube_2_cfg = cube_2_cfg,
         cube_3_cfg = None,
         xy_threshold = xy_threshold,
         height_diff = height_diff,
@@ -199,6 +202,7 @@ def home_return(
     atol: float = 0.005,
     clear_height: float = 0.13,
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    cube_1_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
     cube_2_cfg: SceneEntityCfg = SceneEntityCfg("cube_2"),
     ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
 ) -> torch.Tensor:
@@ -209,7 +213,8 @@ def home_return(
     err = torch.linalg.norm(joints_q - joints_q_home, dim=1)
 
     stacked = cubes_stacked(
-        env, cube_3_cfg=None, xy_threshold=xy_threshold, height_diff=height_diff, atol=atol, rtol=0.0
+        env, cube_1_cfg=cube_1_cfg, cube_2_cfg=cube_2_cfg, cube_3_cfg=None, xy_threshold=xy_threshold,
+        height_diff=height_diff, atol=atol, rtol=0.0
     )
 
     cube_2: RigidObject = env.scene[cube_2_cfg.name]

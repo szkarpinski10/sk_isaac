@@ -296,13 +296,13 @@ class EventCfg:
         },
     )
 
+    # policy2: na starcie wieża czerwona (cube_2) na niebieskiej (cube_1) i osobno zielona (cube_3)
     randomize_cube_positions = EventTerm(
-        func=mdp.randomize_object_pose_all_possibilities,
+        func=mdp.rand_tower_pos_and_cube_3,
         mode="reset",
         params={
             "pose_range": {"x": (0.35, 0.55), "y": (-0.20, 0.20), "z": (0.025, 0.025), "yaw": (-math.pi, math.pi)},
-            "min_separation": 0.1,
-            "asset_cfgs": [SceneEntityCfg("cube_1"), SceneEntityCfg("cube_2"), SceneEntityCfg("cube_3")],
+            "min_separation": 0.12,
         },
     )
     randomize_cube_2_friction = EventTerm(
@@ -400,46 +400,50 @@ class EventCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
-    reaching_object_fine_grained = RewTerm(func=mdp.object_ee_distance, params={"std": 0.1, "object_cfg": SceneEntityCfg("cube_2")}, weight=1.0)
-    reching_object = RewTerm(func = mdp.object_ee_distance, params={"std": 0.4, "object_cfg": SceneEntityCfg("cube_2")}, weight=1.0)
-    lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.04, "object_cfg":SceneEntityCfg("cube_2")}, weight=3.0)
+    # policy2: chwytamy zieloną (cube_3) i stawiamy na czerwonej (cube_2). Funkcje te same co w policy1 – zmienione
+    # tylko kostki w parametrach ("cube_1_cfg" = dolna kostka wieży, "cube_2_cfg" = górna).
+    reaching_object_fine_grained = RewTerm(func=mdp.object_ee_distance, params={"std": 0.1, "object_cfg": SceneEntityCfg("cube_3")}, weight=1.0)
+    reching_object = RewTerm(func = mdp.object_ee_distance, params={"std": 0.4, "object_cfg": SceneEntityCfg("cube_3")}, weight=1.0)
+    lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.04, "object_cfg":SceneEntityCfg("cube_3")}, weight=3.0)
 
-    # naprowadzanie cube 2
+    # naprowadzanie cube 3 nad cube 2
     object_goal_tracking = RewTerm(
         func=mdp.object_goal_distance_above_target,
-        params={"std": 0.3, "minimal_height": 0.04, "success_threshold": 0.05},
+        params={"std": 0.3, "minimal_height": 0.04, "success_threshold": 0.05, "object_cfg": SceneEntityCfg("cube_3"), "target_cfg": SceneEntityCfg("cube_2")},
         weight=4.0,
     )
 
     object_goal_tracking_fine_grained = RewTerm(
         func=mdp.object_goal_distance_above_target,
-        params={"std": 0.05, "minimal_height": 0.04},
+        params={"std": 0.05, "minimal_height": 0.04, "object_cfg": SceneEntityCfg("cube_3"), "target_cfg": SceneEntityCfg("cube_2")},
         weight=2.0,
     )
 
 
-    cube_2_on_cube1 = RewTerm(
+    cube_3_on_cube_2 = RewTerm(
         func=mdp.cube_2_on_cube_1, 
+        params={"cube_1_cfg": SceneEntityCfg("cube_2"), "cube_2_cfg": SceneEntityCfg("cube_3")},
         weight = 50.0,
     )
 
-    release = RewTerm(func=mdp.release_cube, params={}, weight=30.0)
+    release = RewTerm(func=mdp.release_cube, params={"cube_1_cfg": SceneEntityCfg("cube_2"), "cube_2_cfg": SceneEntityCfg("cube_3")}, weight=30.0)
 
-    home_return_fine_grained = RewTerm(func = mdp.home_return, params = {"std":1.0}, weight = 30)
-    home_return = RewTerm(func = mdp.home_return, params = {"std":3.0}, weight = 10)
+    home_return_fine_grained = RewTerm(func = mdp.home_return, params = {"std":1.0, "cube_1_cfg": SceneEntityCfg("cube_2"), "cube_2_cfg": SceneEntityCfg("cube_3")}, weight = 30)
+    home_return = RewTerm(func = mdp.home_return, params = {"std":3.0, "cube_1_cfg": SceneEntityCfg("cube_2"), "cube_2_cfg": SceneEntityCfg("cube_3")}, weight = 10)
     
-    xy_align = RewTerm(func=mdp.ee_cube_align, params={"std": 0.02}, weight=2.0)
-    grasp_height = RewTerm(func=mdp.grasp_height, params={"std": 0.02}, weight=3.0)
+    xy_align = RewTerm(func=mdp.ee_cube_align, params={"std": 0.02, "cube_cfg": SceneEntityCfg("cube_3")}, weight=2.0)
+    grasp_height = RewTerm(func=mdp.grasp_height, params={"std": 0.02, "cube_cfg": SceneEntityCfg("cube_3")}, weight=3.0)
     # puszczanie: od 2.7 cm palca (start otwierania), nagroda za dokładne i spokojne puszczenie, kara za rzut;
-    # waga 0 na start, 30 od it 1250 (curriculum), gdy robot już stawia wieżę
+    # waga 0 na start, 30 od it 1700 (curriculum), gdy robot już stawia wieżę
     place_height = RewTerm(func=mdp.place_height, params={"std": 0.01, "xy_std": 0.02, "open_threshold": 0.027,
-                                                          "speed_std": 0.15, "in_hand_dist": 0.05}, weight=0.0)
-    grasp_yaw_align = RewTerm(func=mdp.grasp_yaw_align, weight=1.0)
-    # zejście do wierzchu kostki, gdy chwytak nie jest nad jej środkiem (na robocie palec siada na kostce):
-    # waga 0, -10 od it 1100 (curriculum)
-    descend_off_center = RewTerm(func=mdp.descend_off_center, weight=0.0)
-    # ruch niebieskiej kostki (potrącenie ramieniem, ciągnięcie wieży przy odkładaniu): waga 0, -50 od it 1500
-    cube_1_moving = RewTerm(func=mdp.cube_1_moving, weight=0.0)
+                                                          "speed_std": 0.15, "in_hand_dist": 0.05,
+                                                          "cube_1_cfg": SceneEntityCfg("cube_2"), "cube_2_cfg": SceneEntityCfg("cube_3")}, weight=0.0)
+    grasp_yaw_align = RewTerm(func=mdp.grasp_yaw_align, params={"cube_cfg": SceneEntityCfg("cube_3")}, weight=1.0)
+    # zejście do wierzchu zielonej, gdy chwytak nie jest nad jej środkiem (palec siada na kostce): -10 od it 1500
+    descend_off_center = RewTerm(func=mdp.descend_off_center, params={"cube_cfg": SceneEntityCfg("cube_3")}, weight=0.0)
+    # ruch kostek wieży startowej (potrącenie, ciągnięcie przy odkładaniu zielonej): waga 0, -50 od it 2000
+    cube_1_moving = RewTerm(func=mdp.cube_1_moving, params={"cube_cfg": SceneEntityCfg("cube_1")}, weight=0.0)
+    cube_2_moving = RewTerm(func=mdp.cube_1_moving, params={"cube_cfg": SceneEntityCfg("cube_2")}, weight=0.0)
     # action penalty
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
 
@@ -448,6 +452,13 @@ class RewardsCfg:
         func = mdp.is_terminated_term,
         params = {"term_keys": "tower_knocked"},
         weight = -300.0,
+    )
+
+    # przewrócenie wieży startowej (czerwona z niebieskiej): kara włączana od 15000 kroków
+    tower_destroyed_penalty = RewTerm(
+        func = mdp.is_terminated_term,
+        params = {"term_keys": "tower_destroyed"},
+        weight = 0.0,
     )
 
     arm_action_l2 = RewTerm(func=mdp.arm_action_l2, weight=0.0)
@@ -469,14 +480,21 @@ class CurriculumCfg:
     )
 
     # najpierw nauka chwytu i stawiania jak w nowy_B, potem dokładne puszczanie (24 kroki na iterację)
-    place_height = CurrTerm(
-        func=mdp.modify_reward_weight, params={"term_name": "place_height", "weight": 30.0, "num_steps": 30000}
+    # policy2 uczy się stawiać później niż policy1 (ok. it 1100), więc etapy przesunięte
+    tower_destroyed_penalty = CurrTerm(
+        func=mdp.modify_reward_weight, params={"term_name": "tower_destroyed_penalty", "weight": -300.0, "num_steps": 15000}
     )
     descend_off_center = CurrTerm(
-        func=mdp.modify_reward_weight, params={"term_name": "descend_off_center", "weight": -10.0, "num_steps": 26400}
+        func=mdp.modify_reward_weight, params={"term_name": "descend_off_center", "weight": -10.0, "num_steps": 36000}
+    )
+    place_height = CurrTerm(
+        func=mdp.modify_reward_weight, params={"term_name": "place_height", "weight": 30.0, "num_steps": 40800}
     )
     cube_1_moving = CurrTerm(
-        func=mdp.modify_reward_weight, params={"term_name": "cube_1_moving", "weight": -50.0, "num_steps": 36000}
+        func=mdp.modify_reward_weight, params={"term_name": "cube_1_moving", "weight": -50.0, "num_steps": 48000}
+    )
+    cube_2_moving = CurrTerm(
+        func=mdp.modify_reward_weight, params={"term_name": "cube_2_moving", "weight": -50.0, "num_steps": 48000}
     )
 
     
@@ -500,8 +518,15 @@ class TerminationsCfg:
         func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cube_3")}
     )
 
+    # nowa wieża (zielona na czerwonej) przewrócona po odstawieniu
     tower_knocked = DoneTerm(
-        func = mdp.tower_knocked
+        func = mdp.tower_knocked,
+        params = {"cube_1_cfg": SceneEntityCfg("cube_2"), "cube_2_cfg": SceneEntityCfg("cube_3")},
+    )
+
+    # wieża startowa (czerwona na niebieskiej) przewrócona
+    tower_destroyed = DoneTerm(
+        func = mdp.tower_destroyed,
     )
 
 
