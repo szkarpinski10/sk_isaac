@@ -494,7 +494,7 @@ class CurriculumCfg:
         func=mdp.modify_reward_weight, params={"term_name": "cube_1_moving", "weight": -50.0, "num_steps": 48000}
     )
     cube_2_moving = CurrTerm(
-        func=mdp.modify_reward_weight, params={"term_name": "cube_2_moving", "weight": -150.0, "num_steps": 48000}
+        func=mdp.modify_reward_weight, params={"term_name": "cube_2_moving", "weight": -50.0, "num_steps": 48000}
     )
 
     
